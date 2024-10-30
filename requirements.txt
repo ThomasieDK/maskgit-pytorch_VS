@@ -3,7 +3,11 @@ numpy
 pillow
 omegaconf
 matplotlib
-tensorboard
 torch~=2.4.1
 torchvision~=0.19.1
+pytorch-lightning~=2.4.0
 accelerate~=1.0.1
+tensorboard~=2.18.0
+einops~=0.8.0
+lpips~=0.1.4
+scikit-image~=0.24.0
