@@ -2,14 +2,17 @@
 
 Unofficial PyTorch implementation of [MaskGIT](http://arxiv.org/abs/2202.04200). The official Jax implementation is available at [here](https://github.com/google-research/maskgit).
 
-🌟 This repo only focuses on the stage-2 of MaskGIT, i.e., the Masked Visual Token Modeling (MVTM) part.
+> [!NOTE]
+> This repo only focuses on the stage-2 of MaskGIT, i.e., the Masked Visual Token Modeling (MVTM) part.
 We use pretrained VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers) and [amused](https://huggingface.co/amused/amused-256) as the stage-1 model.
+
+> [!WARNING]
+> The transformer architecture is not exactly the same as the official implementation.
 
 
 
 ## 🛠️ Installation
 
-> [!NOTE]
 > The code is tested with python 3.12, torch 2.4.1 and cuda 12.4.
 
 Clone this repo:

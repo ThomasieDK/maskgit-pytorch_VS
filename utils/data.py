@@ -7,6 +7,7 @@ import torchvision.datasets as dset
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
 
+from datasets.ffhq import FFHQ
 from datasets.imagenet import ImageNet
 
 
@@ -43,6 +44,16 @@ def load_data(conf, split='train'):
             T.Normalize([0.5] * 3, [0.5] * 3),
         ])
         dataset = dset.CelebA(root=conf.root, split=split, transform=transform)
+
+    elif conf.name.lower() == 'ffhq':
+        flip_p = 0.5 if split == 'train' else 0.0
+        transform = T.Compose([
+            T.Resize((conf.img_size, conf.img_size), antialias=True),
+            T.RandomHorizontalFlip(p=flip_p),
+            T.ToTensor(),
+            T.Normalize(mean=[0.5] * 3, std=[0.5] * 3),
+        ])
+        dataset = FFHQ(root=conf.root, split=split, transforms=transform)
 
     elif conf.name.lower() == 'imagenet':
         flip_p = 0.5 if split == 'train' else 0.0

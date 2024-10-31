@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Tuple, Union
 from omegaconf import OmegaConf
 
 import torch
@@ -70,8 +70,8 @@ class TamingVQModelWrapper(nn.Module):
     def decode(self, z: Tensor):
         return self.vqmodel.decode(z)
 
-    def decode_indices(self, indices: Tensor):
-        quant = self.vqmodel.quantize.get_codebook_entry(indices, shape=None)
+    def decode_indices(self, indices: Tensor, shape: Tuple[int, ...]):
+        quant = self.vqmodel.quantize.get_codebook_entry(indices, shape)
         return self.decode(quant)
 
 
@@ -91,8 +91,8 @@ class aMUSEdVQModelWrapper(nn.Module):
         return dict(quant=quant, indices=indices)
 
     def decode(self, z: Union[Tensor, FloatTensor]):
-        return self.vqmodel.decode(z, force_not_quantize=True).sample
+        return self.vqmodel.decode(z).sample
 
-    def decode_indices(self, indices: Tensor):
-        quant = self.vqmodel.quantize.get_codebook_entry(indices, shape=None)
+    def decode_indices(self, indices: Tensor, shape: Tuple[int, ...]):
+        quant = self.vqmodel.quantize.get_codebook_entry(indices, shape)
         return self.decode(quant)
