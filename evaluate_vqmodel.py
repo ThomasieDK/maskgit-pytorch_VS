@@ -61,7 +61,8 @@ def main():
     logger.info(f'Total batch size: {args.bspp * accelerator.num_processes}')
 
     # BUILD MODEL
-    vqmodel = make_vqmodel(args.model_name)
+    with accelerator.local_main_process_first():
+        vqmodel = make_vqmodel(args.model_name)
     vqmodel.eval().to(device)
     logger.info('=' * 19 + ' Model Info ' + '=' * 19)
     logger.info(f'Successfully load {args.model_name} vqmodel')

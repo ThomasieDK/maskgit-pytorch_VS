@@ -9,6 +9,7 @@ We use pretrained VQGAN from [taming-transformers](https://github.com/CompVis/ta
 
 ## 🛠️ Installation
 
+> [!NOTE]
 > The code is tested with python 3.12, torch 2.4.1 and cuda 12.4.
 
 Clone this repo:
@@ -34,11 +35,11 @@ pip install -r requirements.txt
 
 
 
-## 🤖️ Download
+## 🤖️ Pretrained Models
 
 ### 🤖️ Stage-1 Model
 
-Download VQGAN pretrained on ImageNet from [taming-transformers](https://github.com/CompVis/taming-transformers):
+Run the following command to download the VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers):
 
 ```shell
 mkdir -p ckpts/taming
@@ -48,6 +49,8 @@ wget 'https://heibox.uni-heidelberg.de/f/867b05fc8c4841768640/?dl=1' -O 'ckpts/t
 wget 'https://heibox.uni-heidelberg.de/f/274fb24ed38341bfa753/?dl=1' -O 'ckpts/taming/vqgan_imagenet_f16_16384.yaml'
 ```
 
+The VQGAN from [amused](https://huggingface.co/amused/amused-256) will be automatically downloaded when running the training / evaluation script.
+
 
 
 ## 🚀 Evaluate Stage-1 Model
@@ -56,10 +59,13 @@ wget 'https://heibox.uni-heidelberg.de/f/274fb24ed38341bfa753/?dl=1' -O 'ckpts/t
 accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot DATAROOT
 ```
 
-|            Model Name             | PSNR  | SSIM | LPIPS |
-|:---------------------------------:|:-----:|:----:|:-----:|
-| `taming/vqgan_imagenet_f16_1024`  | 19.52 | 0.49 | 0.19  |
-| `taming/vqgan_imagenet_f16_16384` | 19.98 | 0.50 | 0.17  |
+ImageNet (256x256):
+
+|                Model Name                | PSNR ↑ | SSIM ↑ | LPIPS ↓ | rFID ↓ |
+|:----------------------------------------:|:------:|:------:|:-------:|:------:|
+|     `taming/vqgan_imagenet_f16_1024`     | 19.52  |  0.49  |  0.19   |  8.31  |
+|    `taming/vqgan_imagenet_f16_16384`     | 20.01  |  0.50  |  0.17   |  5.00  |
+| `amused/amused-256`, `amused/amused-512` | 21.81  |  0.58  |  0.14   |  4.41  |
 
 
 
@@ -86,5 +92,18 @@ VQGAN (Taming Transformers):
   booktitle={Proceedings of the IEEE/CVF conference on computer vision and pattern recognition},
   pages={12873--12883},
   year={2021}
+}
+```
+
+aMUSEd:
+
+```
+@misc{patil2024amused,
+  title={aMUSEd: An Open MUSE Reproduction}, 
+  author={Suraj Patil and William Berman and Robin Rombach and Patrick von Platen},
+  year={2024},
+  eprint={2401.01808},
+  archivePrefix={arXiv},
+  primaryClass={cs.CV}
 }
 ```
