@@ -39,8 +39,7 @@ def main():
     conf = OmegaConf.merge(conf, OmegaConf.from_dotlist(unknown_args))
 
     # INITIALIZE ACCELERATOR
-    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
-    accelerator = accelerate.Accelerator(kwargs_handlers=[ddp_kwargs])
+    accelerator = accelerate.Accelerator()
     device = accelerator.device
     print(f'Process {accelerator.process_index} using device: {device}', flush=True)
     accelerator.wait_for_everyone()
@@ -99,7 +98,7 @@ def main():
     # BUILD MODEL AND OPTIMIZERS
     model = instantiate_from_config(conf.transformer)
     optimizer = instantiate_from_config(conf.train.optim, params=model.parameters())
-    logger.info(f'Number of parameters of ar model: {sum(p.numel() for p in model.parameters()):,}')
+    logger.info(f'Number of parameters of transformer: {sum(p.numel() for p in model.parameters()):,}')
     logger.info('=' * 50)
 
     # RESUME TRAINING
@@ -141,14 +140,15 @@ def main():
         B = x.shape[0]
         N = conf.data.img_size // 16  # TODO: downsample factor is hardcoded
         # vqmodel encode
-        idx = vqmodel.encode(x)['indices']      # (B * N * N)
-        idx = idx.reshape(B, N * N)             # (B, N * N)
+        idx = vqmodel.encode(x)['indices']                                  # (B * N * N)
+        idx = idx.reshape(B, N * N)                                         # (B, N * N)
         # transformer forward
-        preds, mask = model(idx)                # (B, N * N, C)
-        preds = preds.reshape(B * N * N, -1)    # (B * N * N, C)
-        mask = mask.reshape(B * N * N)          # (B * N * N)
+        mask = unwrapped_model.get_random_mask(B, N * N)                    # (B, N * N)
+        masked_idx = torch.where(mask, unwrapped_model.mask_token_id, idx)  # (B, N * N)
+        preds = model(masked_idx).reshape(B * N * N, -1)                    # (B * N * N, C)
+        mask = mask.reshape(B * N * N)                                      # (B * N * N)
         # cross-entropy loss
-        target = idx.reshape(-1)                # (B * N * N)
+        target = idx.reshape(-1)                                            # (B * N * N)
         target = torch.where(mask, target, -100)
         loss = F.cross_entropy(
             input=preds, target=target, ignore_index=-100,
@@ -160,15 +160,16 @@ def main():
         optimizer.step()
         return dict(loss=loss.item(), lr=optimizer.param_groups[0]['lr'])
 
-    @accelerator.on_main_process
     @torch.no_grad()
     def sample(savepath):
-        n_samples = conf.train.n_samples
-        nrow = math.ceil(math.sqrt(n_samples))
+        nrow = math.ceil(math.sqrt(conf.train.n_samples))
+        n_samples = conf.train.n_samples // accelerator.num_processes
         fm_size = conf.data.img_size // 16  # TODO: downsample factor is hardcoded
-        idx = unwrapped_model.sample(B=n_samples, L=fm_size ** 2, T=8)
+        *_, idx = unwrapped_model.sample_loop(B=n_samples, L=fm_size ** 2, T=8)
         samples = vqmodel.decode_indices(idx, shape=(n_samples, fm_size, fm_size, -1)).clamp(-1, 1)
-        save_image(samples, savepath, nrow=nrow, normalize=True, value_range=(-1, 1))
+        samples = accelerator.gather(samples).cpu()
+        if accelerator.is_main_process:
+            save_image(samples, savepath, nrow=nrow, normalize=True, value_range=(-1, 1))
 
     # START TRAINING
     logger.info('Start training...')

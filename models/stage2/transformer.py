@@ -67,7 +67,7 @@ class MaskTransformer(nn.Module):
             n_heads: int,
             n_layers: int,
             n_tokens: int,
-            n_classes: int = 1,
+            n_classes: int = 0,
             dropout: float = 0.0,
             mask_schedule_type: str = 'cosine',
     ):
@@ -76,28 +76,36 @@ class MaskTransformer(nn.Module):
         # get mask scheduling function
         self.gamma = get_mask_scheduling_fn(mask_schedule_type)
 
-        # token embedding
-        self.token_emb = nn.Embedding(vocab_size, embed_dim)
+        # token embedding (mask token is the last token)
+        self.mask_token_id = vocab_size
+        self.token_emb = nn.Embedding(vocab_size + 1, embed_dim)
         self.pos_emb = nn.Parameter(torch.zeros((1, n_tokens, embed_dim)))
         self.drop_emb = nn.Dropout(dropout)
-        # mask embedding
-        self.mask_emb = nn.Parameter(torch.zeros((1, 1, embed_dim)))
+
         # class embedding
-        self.class_emb = nn.Embedding(n_classes, embed_dim)
+        if n_classes > 0:
+            # uncond token is the last token
+            self.uncond_token_id = n_classes
+            self.class_emb = nn.Embedding(n_classes + 1, embed_dim)
+
         # transformer blocks
         self.blocks = nn.ModuleList([
             TransformerBlock(embed_dim=embed_dim, n_heads=n_heads, dropout=dropout)
             for _ in range(n_layers)
         ])
+
         # classifier
         self.classifier = nn.Sequential(
             nn.LayerNorm(embed_dim),
             nn.Linear(embed_dim, vocab_size),
         )
+
         # weights initialization
         self.apply(self._init_weights)
         nn.init.trunc_normal_(self.pos_emb, std=0.02)
-        nn.init.trunc_normal_(self.mask_emb, std=0.02)
+
+        # helper distribution for sampling
+        self.gumbel = torch.distributions.Gumbel(0, 1)
 
     @staticmethod
     def _init_weights(module):
@@ -111,24 +119,19 @@ class MaskTransformer(nn.Module):
             nn.init.ones_(module.weight)
             nn.init.zeros_(module.bias)
 
-    def forward(self, idx: Tensor, mask: Tensor = None, y: Tensor = None):
-        """ idx (B, L), mask (B, L), y (B, 1) -> logits (B, L, C) """
+    def forward(self, idx: Tensor, y: Tensor = None, cond_drop_prob: float = 0.0):
+        """ idx (B, L), y (B, 1) -> logits (B, L, C) """
         B, L = idx.shape
         # token embedding
         x = self.token_emb(idx)
-        # apply mask embedding
-        if mask is None:
-            n = math.ceil(self.gamma(np.random.random()) * L)
-            index = torch.rand((B, L), device=idx.device).topk(n, dim=1).indices
-            mask = torch.zeros((B, L), dtype=torch.bool, device=idx.device)
-            mask.scatter_(dim=1, index=index, src=torch.ones_like(mask, dtype=torch.bool))
-        x = torch.where(mask[:, :, None], self.mask_emb, x)
         # add position embedding
         x = x + self.pos_emb[:, :L, :]
         x = self.drop_emb(x)
-        # concatenate class embedding
+        # prepend class embedding
         if y is not None:
             y = y[:, None] if y.ndim == 1 else y
+            is_drop = torch.rand_like(y, dtype=torch.float) < cond_drop_prob
+            y[is_drop] = self.uncond_token_id
             class_embed = self.class_emb(y)
             x = torch.cat((class_embed, x), dim=1)
         # forward
@@ -138,14 +141,26 @@ class MaskTransformer(nn.Module):
             x = x[:, 1:, :]
         # classifier
         logits = self.classifier(x)
-        return logits, mask
+        return logits
+
+    def get_random_mask(self, B: int, L: int):
+        device = self.pos_emb.device
+        n = math.ceil(self.gamma(np.random.random()) * L)
+        index = torch.rand((B, L), device=device).topk(n, dim=1).indices
+        mask = torch.zeros((B, L), dtype=torch.bool, device=device)
+        mask.scatter_(dim=1, index=index, src=torch.ones_like(mask, dtype=torch.bool))
+        return mask
 
     @torch.no_grad()
-    def sample_one_step(self, idx: Tensor, mask: Tensor, n: int, y: Tensor = None, temp: float = 1.0, topk: int = None):
-        """ idx (B, L), mask (B, L), y (B, 1) -> sampled_idx (B, L), mask (B, L) """
+    def sample_one_step(
+            self, n: int, idx: Tensor, y: Tensor = None,
+            temp: float = 1.0, topk: int = None, choice_temp: float = 0.0,
+    ):
+        """ idx (B, L), y (B, 1) -> sampled_idx (B, L) """
         B, L = idx.shape
+        mask = torch.eq(idx, self.mask_token_id)
         # get probabilities
-        logits = self(idx, mask, y)[0] / temp
+        logits = self(idx, y) / temp
         if topk is not None:
             v, _ = torch.topk(logits, min(topk, L), largest=True, sorted=True)
             logits[logits < v[:, [-1]]] = float('-inf')
@@ -155,27 +170,26 @@ class MaskTransformer(nn.Module):
         sampled_probs = torch.gather(probs, dim=-1, index=sampled_idx[:, :, None]).reshape(B, L)
         # restore unmasked positions
         sampled_idx = torch.where(mask, sampled_idx, idx)
-        sampled_probs = torch.where(mask, sampled_probs, torch.ones_like(sampled_probs))
-        # unmask top L-n positions
-        index = sampled_probs.topk(L - n, dim=1).indices
+        sampled_probs = torch.where(mask, sampled_probs, torch.full_like(sampled_probs, torch.inf))
+        # unmask top L-n positions (with gumbel noise added for randomness)
+        randomness = self.gumbel.sample(sampled_probs.shape).to(sampled_probs.device)
+        confidence = torch.log(sampled_probs) + choice_temp * randomness
+        index = confidence.topk(L - n, dim=1).indices
         mask = mask.scatter(dim=1, index=index, src=torch.zeros_like(mask, dtype=torch.bool))
-        return sampled_idx, mask
+        sampled_idx = torch.where(mask, self.mask_token_id, sampled_idx)
+        return sampled_idx
 
     @torch.no_grad()
-    def sample(self, B: int, L: int, T: int, y: Tensor = None, temp: float = 1.0, topk: int = None, return_inter: bool = False):
+    def sample_loop(
+            self, B: int, L: int, T: int, y: Tensor = None,
+            temp: float = 1.0, topk: int = None, base_choice_temp: float = 4.5,
+    ):
         assert T <= L, f'The number of steps T should <= the sequence length L, but got T={T} and L={L}'
-
-        idx = torch.zeros((B, L), dtype=torch.long, device=next(self.parameters()).device)
-        mask = torch.ones((B, L), dtype=torch.bool, device=next(self.parameters()).device)
-        idx_list, mask_list = [idx], [mask]
-
+        device = self.pos_emb.device
+        idx = torch.full((B, L), self.mask_token_id, dtype=torch.long, device=device)
         for t in range(T):
+            # after this iteration, n positions remain masked
             n = math.ceil(self.gamma((t + 1) / T) * L)
-            idx, mask = self.sample_one_step(idx, mask, n, y, temp, topk)
-            idx_list.append(idx)
-            mask_list.append(mask)
-        assert mask.sum() == 0, f'{mask[0].sum()} positions are not sampled'
-
-        if not return_inter:
-            return idx
-        return idx_list, mask_list
+            choice_temp = base_choice_temp * (1 - (t + 1) / T)
+            idx = self.sample_one_step(n, idx, y, temp, topk, choice_temp)
+            yield idx
