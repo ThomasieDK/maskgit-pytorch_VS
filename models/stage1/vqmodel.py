@@ -7,6 +7,7 @@ from torch import Tensor, FloatTensor
 
 from diffusers import VQModel as aMUSEdVQModel
 from .taming.vqmodel import VQModel as TamingVQModel
+from .llamagen.vq_model import VQModel as LlamaGenVQModel, ModelArgs as LlamaGenModelArgs
 
 
 AVAILABLE_MODEL_NAMES = (
@@ -14,6 +15,7 @@ AVAILABLE_MODEL_NAMES = (
     'taming/vqgan_imagenet_f16_16384',
     'amused/amused-256',
     'amused/amused-512',
+    'llamagen/vq_ds16_c2i',
 )
 
 
@@ -33,6 +35,26 @@ def make_vqmodel(name: str):
         ckpt_path = f'ckpts/{name}.ckpt'
         weights = torch.load(ckpt_path, map_location='cpu', weights_only=True)
         vqmodel.load_state_dict(weights['state_dict'], strict=False)
+        del weights
+        # wrap model
+        model = TamingVQModelWrapper(vqmodel)
+        model.eval()
+        model.requires_grad_(False)
+        return model
+
+    elif 'llamagen' in name:
+        # create model args & build model
+        args = LlamaGenModelArgs(
+            encoder_ch_mult=[1, 1, 2, 2, 4],
+            decoder_ch_mult=[1, 1, 2, 2, 4],
+            codebook_size=16384,
+            codebook_embed_dim=8,
+        )
+        vqmodel = LlamaGenVQModel(args)
+        # load weights
+        ckpt_path = f'ckpts/{name}.pt'
+        weights = torch.load(ckpt_path, map_location='cpu', weights_only=True)
+        vqmodel.load_state_dict(weights['model'], strict=True)
         del weights
         # wrap model
         model = TamingVQModelWrapper(vqmodel)

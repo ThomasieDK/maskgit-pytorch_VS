@@ -2,12 +2,10 @@
 
 Unofficial PyTorch implementation of [MaskGIT](http://arxiv.org/abs/2202.04200). The official Jax implementation is available at [here](https://github.com/google-research/maskgit).
 
-> [!NOTE]
-> This repo only focuses on the stage-2 of MaskGIT, i.e., the Masked Visual Token Modeling (MVTM) part.
-We use pretrained VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers) and [amused](https://huggingface.co/amused/amused-256) as the stage-1 model.
-
 > [!WARNING]
 > The transformer architecture is not exactly the same as the official implementation.
+
+<br/>
 
 
 
@@ -36,13 +34,21 @@ pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorc
 pip install -r requirements.txt
 ```
 
+<br/>
+
 
 
 ## 🤖️ Pretrained Models
 
-### 🤖️ Stage-1 Model
+### 🤖️ Stage-1 Models
 
-Run the following command to download the VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers):
+> [!NOTE]
+> This repo only focuses on the stage-2 of MaskGIT, i.e., the Masked Visual Token Modeling (MVTM) part.
+We use pretrained VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers), 
+> [llamagen](https://github.com/FoundationVision/LlamaGen) and [amused](https://huggingface.co/amused/amused-256) 
+> as the stage-1 model.
+
+Download the VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers):
 
 ```shell
 mkdir -p ckpts/taming
@@ -52,11 +58,20 @@ wget 'https://heibox.uni-heidelberg.de/f/867b05fc8c4841768640/?dl=1' -O 'ckpts/t
 wget 'https://heibox.uni-heidelberg.de/f/274fb24ed38341bfa753/?dl=1' -O 'ckpts/taming/vqgan_imagenet_f16_16384.yaml'
 ```
 
+Download the VQGAN from [llamagen](https://github.com/FoundationVision/LlamaGen):
+
+```shell
+mkdir -p ckpts/llamagen
+wget 'https://huggingface.co/FoundationVision/LlamaGen/resolve/main/vq_ds16_c2i.pt' -O 'ckpts/llamagen/vq_ds16_c2i.pt'
+```
+
 The VQGAN from [amused](https://huggingface.co/amused/amused-256) will be automatically downloaded when running the training / evaluation script.
 
+<br/>
 
 
-## 🚀 Evaluate Stage-1 Model
+
+## 🚀 Evaluate Stage-1 Models
 
 ```shell
 accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot DATAROOT
@@ -64,11 +79,26 @@ accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot DATAROO
 
 ImageNet (256x256):
 
-|                Model Name                | PSNR ↑ | SSIM ↑ | LPIPS ↓ | rFID ↓ |
-|:----------------------------------------:|:------:|:------:|:-------:|:------:|
-|     `taming/vqgan_imagenet_f16_1024`     | 19.52  |  0.49  |  0.19   |  8.31  |
-|    `taming/vqgan_imagenet_f16_16384`     | 20.01  |  0.50  |  0.17   |  5.00  |
-| `amused/amused-256`, `amused/amused-512` | 21.81  |  0.58  |  0.14   |  4.41  |
+|                Model Name                |  PSNR ↑   |  SSIM ↑  | LPIPS ↓  |  rFID ↓  |
+|:----------------------------------------:|:---------:|:--------:|:--------:|:--------:|
+|     `taming/vqgan_imagenet_f16_1024`     |   19.52   |   0.49   |   0.19   |   8.31   |
+|    `taming/vqgan_imagenet_f16_16384`     |   20.01   |   0.50   |   0.17   |   5.00   |
+|          `llamagen/vq_ds16_c2i`          |   20.79   |   0.56   | **0.14** | **2.19** |
+| `amused/amused-256`, `amused/amused-512` | **21.81** | **0.58** | **0.14** |   4.41   |
+
+<br/>
+
+
+
+## 🔥 Train Stage-2 Models
+
+To train an unconditional MaskGIT model, run the following command:
+
+```shell
+accelerate-launch train.py -c CONFIG -e EXPDIR
+```
+
+<br/>
 
 
 
@@ -95,6 +125,17 @@ VQGAN (Taming Transformers):
   booktitle={Proceedings of the IEEE/CVF conference on computer vision and pattern recognition},
   pages={12873--12883},
   year={2021}
+}
+```
+
+LlamaGen:
+
+```
+@article{sun2024autoregressive,
+  title={Autoregressive Model Beats Diffusion: Llama for Scalable Image Generation},
+  author={Sun, Peize and Jiang, Yi and Chen, Shoufa and Zhang, Shilong and Peng, Bingyue and Luo, Ping and Yuan, Zehuan},
+  journal={arXiv preprint arXiv:2406.06525},
+  year={2024}
 }
 ```
 
