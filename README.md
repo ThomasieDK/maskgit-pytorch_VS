@@ -1,6 +1,6 @@
 # maskgit-pytorch
 
-Unofficial PyTorch implementation of [MaskGIT](http://arxiv.org/abs/2202.04200). The official Jax implementation is available at [here](https://github.com/google-research/maskgit).
+Unofficial PyTorch implementation of [MaskGIT](http://arxiv.org/abs/2202.04200). The official Jax implementation can be found [here](https://github.com/google-research/maskgit).
 
 > [!WARNING]
 > The transformer architecture is not exactly the same as the official implementation.
@@ -40,15 +40,15 @@ pip install -r requirements.txt
 
 ## 🤖️ Pretrained Models
 
-### 🤖️ Stage-1 Models
+### 🤖️ Stage-1 Models (VQGAN)
 
 > [!NOTE]
 > This repo only focuses on the stage-2 of MaskGIT, i.e., the Masked Visual Token Modeling (MVTM) part.
-We use pretrained VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers), 
+We support loading the pretrained VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers), 
 > [llamagen](https://github.com/FoundationVision/LlamaGen) and [amused](https://huggingface.co/amused/amused-256) 
-> as the stage-1 model.
+> as the stage-1 models.
 
-Download the VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers):
+The pretrained VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers) can be downloaded by:
 
 ```shell
 mkdir -p ckpts/taming
@@ -58,20 +58,20 @@ wget 'https://heibox.uni-heidelberg.de/f/867b05fc8c4841768640/?dl=1' -O 'ckpts/t
 wget 'https://heibox.uni-heidelberg.de/f/274fb24ed38341bfa753/?dl=1' -O 'ckpts/taming/vqgan_imagenet_f16_16384.yaml'
 ```
 
-Download the VQGAN from [llamagen](https://github.com/FoundationVision/LlamaGen):
+The pretrained VQGAN from [llamagen](https://github.com/FoundationVision/LlamaGen) can be downloaded by:
 
 ```shell
 mkdir -p ckpts/llamagen
 wget 'https://huggingface.co/FoundationVision/LlamaGen/resolve/main/vq_ds16_c2i.pt' -O 'ckpts/llamagen/vq_ds16_c2i.pt'
 ```
 
-The VQGAN from [amused](https://huggingface.co/amused/amused-256) will be automatically downloaded when running the training / evaluation script.
+The pretrained VQGAN from [amused](https://huggingface.co/amused/amused-256) will be automatically downloaded when running the training / evaluation script.
 
 <br/>
 
 
 
-## 🚀 Evaluate Stage-1 Models
+## 🚀 Evaluate Stage-1 Models (VQGAN)
 
 ```shell
 accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot DATAROOT
@@ -90,7 +90,7 @@ ImageNet (256x256):
 
 
 
-## 🔥 Train Stage-2 Models
+## 🔥 Train Stage-2 Models (MaskGIT)
 
 To train an unconditional MaskGIT model, run the following command:
 

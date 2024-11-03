@@ -57,7 +57,7 @@ def make_vqmodel(name: str):
         vqmodel.load_state_dict(weights['model'], strict=True)
         del weights
         # wrap model
-        model = TamingVQModelWrapper(vqmodel)
+        model = LlamaGenVQModelWrapper(vqmodel)
         model.eval()
         model.requires_grad_(False)
         return model
@@ -94,6 +94,29 @@ class TamingVQModelWrapper(nn.Module):
 
     def decode_indices(self, indices: Tensor, shape: Tuple[int, ...]):
         quant = self.vqmodel.quantize.get_codebook_entry(indices, shape)
+        return self.decode(quant)
+
+
+class LlamaGenVQModelWrapper(nn.Module):
+    def __init__(self, vqmodel: LlamaGenVQModel):
+        super().__init__()
+        self.vqmodel = vqmodel
+
+    def forward(self, x: Tensor):
+        recx = self.vqmodel(x)[0]
+        return recx
+
+    def encode(self, x: Tensor):
+        quant, emb_loss, info = self.vqmodel.encode(x)
+        indices = info[-1]
+        return dict(quant=quant, indices=indices)
+
+    def decode(self, z: Tensor):
+        return self.vqmodel.decode(z)
+
+    def decode_indices(self, indices: Tensor, shape: Tuple[int, ...]):
+        quant = self.vqmodel.quantize.get_codebook_entry(indices, shape, channel_first=False)
+        quant = quant.permute(0, 3, 1, 2)
         return self.decode(quant)
 
 

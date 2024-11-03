@@ -8,7 +8,6 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
-from accelerate.utils import DistributedDataParallelKwargs
 
 from models.stage1.vqmodel import make_vqmodel
 from utils.data import load_data
@@ -23,6 +22,7 @@ def get_parser():
     parser.add_argument('-c', '--config', type=str, required=True, help='Path to configuration file')
     parser.add_argument('-e', '--exp_dir', type=str, help='Path to the experiment directory. Default to be ./runs/exp-{current time}/')
     parser.add_argument('-r', '--resume', type=str, help='Resume from a checkpoint. Could be a path or `best` or `latest`')
+    parser.add_argument('-mp', '--mixed_precision', type=str, default=None, help='Mixed precision training')
     parser.add_argument('-cd', '--cover_dir', action='store_true', default=False, help='Cover the experiment directory if it exists')
     return parser
 
@@ -39,7 +39,7 @@ def main():
     conf = OmegaConf.merge(conf, OmegaConf.from_dotlist(unknown_args))
 
     # INITIALIZE ACCELERATOR
-    accelerator = accelerate.Accelerator()
+    accelerator = accelerate.Accelerator(mixed_precision=args.mixed_precision)
     device = accelerator.device
     print(f'Process {accelerator.process_index} using device: {device}', flush=True)
     accelerator.wait_for_everyone()
@@ -98,6 +98,7 @@ def main():
     # BUILD MODEL AND OPTIMIZERS
     model = instantiate_from_config(conf.transformer)
     optimizer = instantiate_from_config(conf.train.optim, params=model.parameters())
+    scheduler = instantiate_from_config(conf.train.sched, optimizer=optimizer)
     logger.info(f'Number of parameters of transformer: {sum(p.numel() for p in model.parameters()):,}')
     logger.info('=' * 50)
 
@@ -107,20 +108,27 @@ def main():
         resume_path = find_resume_checkpoint(exp_dir, args.resume)
         logger.info(f'Resume from {resume_path}')
         # load model
-        ckpt_model = torch.load(os.path.join(resume_path, 'model.pt'), map_location='cpu')
+        ckpt_model = torch.load(os.path.join(resume_path, 'model.pt'), map_location='cpu', weights_only=True)
         model.load_state_dict(ckpt_model['model'])
         logger.info(f'Successfully load model from {resume_path}')
         # load optimizer
-        ckpt_optimizer = torch.load(os.path.join(resume_path, 'optimizer.pt'), map_location='cpu')
+        ckpt_optimizer = torch.load(os.path.join(resume_path, 'optimizer.pt'), map_location='cpu', weights_only=True)
         optimizer.load_state_dict(ckpt_optimizer['optimizer'])
         logger.info(f'Successfully load optimizer from {resume_path}')
+        # load scheduler
+        ckpt_scheduler = torch.load(os.path.join(resume_path, 'scheduler.pt'), map_location='cpu', weights_only=True)
+        scheduler.load_state_dict(ckpt_scheduler['scheduler'])
+        logger.info(f'Successfully load scheduler from {resume_path}')
         # load meta information
-        ckpt_meta = torch.load(os.path.join(resume_path, 'meta.pt'), map_location='cpu')
+        ckpt_meta = torch.load(os.path.join(resume_path, 'meta.pt'), map_location='cpu', weights_only=True)
         step = ckpt_meta['step'] + 1
         logger.info(f'Restart training at step {step}')
+        del ckpt_model, ckpt_optimizer, ckpt_scheduler, ckpt_meta
 
     # PREPARE FOR DISTRIBUTED MODE AND MIXED PRECISION
-    model, optimizer, train_loader = accelerator.prepare(model, optimizer, train_loader)  # type: ignore
+    model, optimizer, scheduler, train_loader = accelerator.prepare(
+        model, optimizer, scheduler, train_loader,  # type: ignore
+    )
     unwrapped_model = accelerator.unwrap_model(model)
     accelerator.wait_for_everyone()
 
@@ -132,6 +140,8 @@ def main():
         accelerator.save(dict(model=unwrapped_model.state_dict()), os.path.join(save_path, 'model.pt'))
         # save optimizer
         accelerator.save(dict(optimizer=optimizer.state_dict()), os.path.join(save_path, 'optimizer.pt'))
+        # save scheduler
+        accelerator.save(dict(scheduler=scheduler.state_dict()), os.path.join(save_path, 'scheduler.pt'))
         # save meta information
         accelerator.save(dict(step=step), os.path.join(save_path, 'meta.pt'))
 
@@ -158,6 +168,7 @@ def main():
         optimizer.zero_grad()
         accelerator.backward(loss)
         optimizer.step()
+        scheduler.step()
         return dict(loss=loss.item(), lr=optimizer.param_groups[0]['lr'])
 
     @torch.no_grad()
