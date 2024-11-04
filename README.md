@@ -75,7 +75,7 @@ The pretrained VQGAN from [amused](https://huggingface.co/amused/amused-256) wil
 accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot DATAROOT
 ```
 
-Quantitative reconstruction results on ImageNet (256x256):
+**Quantitative reconstruction results on ImageNet (256x256)**:
 
 |            Model Name             |  PSNR ↑   |  SSIM ↑  | LPIPS ↓  |  rFID ↓  |
 |:---------------------------------:|:---------:|:--------:|:--------:|:--------:|
@@ -83,24 +83,22 @@ Quantitative reconstruction results on ImageNet (256x256):
 |      `llamagen/vq_ds16_c2i`       |   20.79   |   0.56   | **0.14** | **2.19** |
 |        `amused/amused-256`        | **21.81** | **0.58** | **0.14** |   4.41   |
 
-Qualitative reconstruction results (384x384):
+**Qualitative reconstruction results (384x384)**:
 
 <table>
 <tr>
     <td align="center">original</td>
-    <td align="center">`taming`</td>
-    <td align="center">`llamagen`</td>
-    <td align="center">`amused`</td>
-    <td align="center">original</td>
-    <td align="center">`taming`</td>
-    <td align="center">`llamagen`</td>
-    <td align="center">`amused`</td>
+    <td align="center">taming</td>
+    <td align="center">llamagen</td>
+    <td align="center">amused</td>
 </tr>
 <tr>
     <td width="12%"><img src="/assets/test_img_1.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_1_taming.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_1_llamagen.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_1_amused.png" alt="" /></td>
+</tr>
+<tr>
     <td width="12%"><img src="/assets/test_img_3.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_3_taming.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_3_llamagen.png" alt="" /></td>
@@ -111,6 +109,8 @@ Qualitative reconstruction results (384x384):
     <td width="12%"><img src="./assets/test_img_2_taming.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_2_llamagen.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_2_amused.png" alt="" /></td>
+</tr>
+<tr>
     <td width="12%"><img src="/assets/test_img_4.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_4_taming.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_4_llamagen.png" alt="" /></td>

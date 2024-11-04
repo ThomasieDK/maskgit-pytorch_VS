@@ -12,5 +12,6 @@ def get_mask_scheduling_fn(mask_schedule_type: str):
     else:
         raise ValueError(f"Unknown mask schedule type: {mask_schedule_type}")
 
-    fn_clip = lambda r: np.clip(fn(r), 0., 1.) if r < 1 else 0.
-    return fn_clip
+    fn_clip = lambda r: np.clip(fn(r), 0., 1.)
+    fn_force = lambda r: np.where(r == 1, 0., fn_clip(r))
+    return fn_force
