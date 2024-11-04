@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
+from datasets import CachedFolder
 from models.stage1.vqmodel import make_vqmodel
 from utils.data import load_data
 from utils.logger import get_logger
@@ -146,25 +147,33 @@ def main():
 
     def run_step(batch):
         # get data
-        x = discard_label(batch).float()
-        B = x.shape[0]
-        N = conf.data.img_size // 16  # TODO: downsample factor is hardcoded
-        # vqmodel encode
-        idx = vqmodel.encode(x)['indices']                                  # (B * N * N)
-        idx = idx.reshape(B, N * N)                                         # (B, N * N)
-        # transformer forward
-        mask = unwrapped_model.get_random_mask(B, N * N)                    # (B, N * N)
-        masked_idx = torch.where(mask, unwrapped_model.mask_token_id, idx)  # (B, N * N)
-        preds = model(masked_idx).reshape(B * N * N, -1)                    # (B * N * N, C)
-        mask = mask.reshape(B * N * N)                                      # (B * N * N)
-        # cross-entropy loss
-        target = idx.reshape(-1)                                            # (B * N * N)
-        target = torch.where(mask, target, -100)
-        loss = F.cross_entropy(
-            input=preds, target=target, ignore_index=-100,
-            label_smoothing=conf.train.label_smoothing,
-        )
+        if isinstance(train_set, CachedFolder):
+            idx = batch['idx'].long()
+            B, L = idx.shape
+        else:
+            x = discard_label(batch).float()
+            B, N = x.shape[0], conf.data.img_size // 16  # TODO: downsample factor is hardcoded
+            L = N * N
+            # vqmodel encode
+            with torch.no_grad():
+                idx = vqmodel.encode(x)['indices'].reshape(B, L)                # (B, L)
+
+        with accelerator.autocast():
+            # transformer forward
+            mask = unwrapped_model.get_random_mask(B, L)                        # (B, L)
+            masked_idx = torch.where(mask, unwrapped_model.mask_token_id, idx)  # (B, L)
+            preds = model(masked_idx).reshape(B * L, -1)                        # (B * L, C)
+            mask = mask.reshape(B * L)                                          # (B * L)
+            # cross-entropy loss
+            target = idx.reshape(-1)                                            # (B * L)
+            target = torch.where(mask, target, -100)
+            loss = F.cross_entropy(
+                input=preds, target=target, ignore_index=-100,
+                label_smoothing=conf.train.label_smoothing,
+            )
+
         accelerator.backward(loss)
+
         # optimize
         optimizer.step()
         scheduler.step()

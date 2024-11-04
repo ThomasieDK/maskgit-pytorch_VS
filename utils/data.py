@@ -7,14 +7,16 @@ import torchvision.datasets as dset
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
 
-from datasets.ffhq import FFHQ
-from datasets.imagenet import ImageNet
+from datasets import CachedFolder, FFHQ, ImageNet
 
 
 def load_data(conf, split='train'):
     """Keys in conf: 'name', 'root', 'img_size'."""
 
-    if conf.name.lower() == 'mnist':
+    if 'cached' in conf.name.lower():
+        dataset = CachedFolder(root=conf.root)
+
+    elif conf.name.lower() == 'mnist':
         transform = T.Compose([
             T.Resize((conf.img_size, conf.img_size), antialias=True),
             T.ToTensor(),
@@ -81,8 +83,7 @@ def load_data(conf, split='train'):
 
 
 def center_crop_arr(pil_image, image_size):
-    """
-    Resize and center cropping from ADM, also used in DiT, LlamaGen, MAR, etc.
+    """Resize and center cropping from ADM, also used in DiT, LlamaGen, MAR, etc.
 
     References:
       - https://github.com/openai/guided-diffusion/blob/main/guided_diffusion/image_datasets.py#L126-L167
@@ -108,8 +109,7 @@ def center_crop_arr(pil_image, image_size):
 
 
 def random_crop_arr(pil_image, image_size, min_crop_frac=0.8, max_crop_frac=1.0):
-    """
-    Resize and random cropping from ADM, also used in LlamaGen, etc.
+    """Resize and random cropping from ADM, also used in LlamaGen, etc.
 
     References:
       - https://github.com/openai/guided-diffusion/blob/main/guided_diffusion/image_datasets.py#L126-L167

@@ -99,9 +99,7 @@ def main():
             if accelerator.is_main_process:
                 for i in range(len(h)):
                     save_path = os.path.join(args.save_dir, f'{cnt}.npz')
-                    np.savez(
-                        save_path,
-                        y=y[i] if y is not None else None,  # type: ignore
+                    data = dict(
                         h=h[i].cpu().numpy(),
                         quant=quant[i].cpu().numpy(),
                         idx=idx[i].cpu().numpy(),
@@ -109,6 +107,9 @@ def main():
                         quant_flip=quant_flip[i].cpu().numpy(),
                         idx_flip=idx_flip[i].cpu().numpy(),
                     )
+                    if y is not None:
+                        data.update(y=y[i].cpu().numpy())  # type: ignore
+                    np.savez(save_path, **data)
                     cnt += 1
     logger.info(f'Cached latents are saved to {args.save_dir}')
     logger.info('Finished caching vqmodel latents')
