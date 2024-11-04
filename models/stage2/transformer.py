@@ -163,7 +163,7 @@ class MaskTransformer(nn.Module):
         logits = self(idx, y) / temp
         if topk is not None:
             v, _ = torch.topk(logits, min(topk, L), largest=True, sorted=True)
-            logits[logits < v[:, [-1]]] = float('-inf')
+            logits[logits < v[..., [-1]]] = float('-inf')
         probs = torch.softmax(logits, dim=-1)
         # sample all positions
         sampled_idx = torch.multinomial(probs.reshape(B * L, -1), num_samples=1).reshape(B, L)
