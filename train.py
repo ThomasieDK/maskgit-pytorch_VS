@@ -78,13 +78,9 @@ def main():
     accelerator.wait_for_everyone()
 
     # BUILD DATASET & DATALOADER
-    if conf.train.batch_size % accelerator.num_processes != 0:
-        raise ValueError(
-            f'Batch size should be divisible by number of processes, '
-            f'get {conf.train.batch_size} % {accelerator.num_processes} != 0'
-        )
+    assert conf.train.batch_size % accelerator.num_processes == 0
     bspp = conf.train.batch_size // accelerator.num_processes
-    train_set = load_data(conf.data, split='train')
+    train_set = load_data(conf.data, split='all' if conf.data.name.lower() == 'ffhq' else 'train')
     train_loader = DataLoader(train_set, batch_size=bspp, shuffle=True, drop_last=True, **conf.dataloader)
     logger.info('=' * 19 + ' Data Info ' + '=' * 20)
     logger.info(f'Size of training set: {len(train_set)}')

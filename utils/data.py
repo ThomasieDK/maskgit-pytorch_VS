@@ -46,7 +46,7 @@ def load_data(conf, split='train'):
         dataset = dset.CelebA(root=conf.root, split=split, transform=transform)
 
     elif conf.name.lower() == 'ffhq':
-        flip_p = 0.5 if split == 'train' else 0.0
+        flip_p = 0.5 if split in ['train', 'all'] else 0.0
         transform = T.Compose([
             T.Resize((conf.img_size, conf.img_size), antialias=True),
             T.RandomHorizontalFlip(p=flip_p),

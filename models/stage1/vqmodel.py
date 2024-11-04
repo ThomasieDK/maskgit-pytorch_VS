@@ -85,9 +85,11 @@ class TamingVQModelWrapper(nn.Module):
         return recx
 
     def encode(self, x: Tensor):
-        quant, emb_loss, info = self.vqmodel.encode(x)
+        h = self.vqmodel.encoder(x)
+        h = self.vqmodel.quant_conv(h)
+        quant, emb_loss, info = self.vqmodel.quantize(h)
         indices = info[-1]
-        return dict(quant=quant, indices=indices)
+        return dict(h=h, quant=quant, indices=indices)
 
     def decode(self, z: Tensor):
         return self.vqmodel.decode(z)
@@ -107,9 +109,11 @@ class LlamaGenVQModelWrapper(nn.Module):
         return recx
 
     def encode(self, x: Tensor):
-        quant, emb_loss, info = self.vqmodel.encode(x)
+        h = self.vqmodel.encoder(x)
+        h = self.vqmodel.quant_conv(h)
+        quant, emb_loss, info = self.vqmodel.quantize(h)
         indices = info[-1]
-        return dict(quant=quant, indices=indices)
+        return dict(h=h, quant=quant, indices=indices)
 
     def decode(self, z: Tensor):
         return self.vqmodel.decode(z)
@@ -130,10 +134,10 @@ class aMUSEdVQModelWrapper(nn.Module):
         return recx
 
     def encode(self, x: Union[Tensor, FloatTensor]):
-        z = self.vqmodel.encode(x).latents
-        quant, emb_loss, info = self.vqmodel.quantize(z)
+        h = self.vqmodel.encode(x).latents
+        quant, emb_loss, info = self.vqmodel.quantize(h)
         indices = info[-1]
-        return dict(quant=quant, indices=indices)
+        return dict(h=h, quant=quant, indices=indices)
 
     def decode(self, z: Union[Tensor, FloatTensor]):
         return self.vqmodel.decode(z).sample
