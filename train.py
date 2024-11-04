@@ -13,7 +13,7 @@ from models.stage1.vqmodel import make_vqmodel
 from utils.data import load_data
 from utils.logger import get_logger
 from utils.misc import create_exp_dir, find_resume_checkpoint, instantiate_from_config
-from utils.misc import get_time_str, check_freq, get_data_generator, discard_label
+from utils.misc import get_time_str, check_freq, get_dataloader_iterator, discard_label
 from utils.tracker import StatusTracker
 
 
@@ -39,7 +39,10 @@ def main():
     conf = OmegaConf.merge(conf, OmegaConf.from_dotlist(unknown_args))
 
     # INITIALIZE ACCELERATOR
-    accelerator = accelerate.Accelerator(mixed_precision=args.mixed_precision)
+    accelerator = accelerate.Accelerator(
+        step_scheduler_with_optimizer=False,
+        mixed_precision=args.mixed_precision,
+    )
     device = accelerator.device
     print(f'Process {accelerator.process_index} using device: {device}', flush=True)
     accelerator.wait_for_everyone()
@@ -146,6 +149,7 @@ def main():
         accelerator.save(dict(step=step), os.path.join(save_path, 'meta.pt'))
 
     def run_step(batch):
+        # get data
         x = discard_label(batch).float()
         B = x.shape[0]
         N = conf.data.img_size // 16  # TODO: downsample factor is hardcoded
@@ -164,11 +168,11 @@ def main():
             input=preds, target=target, ignore_index=-100,
             label_smoothing=conf.train.label_smoothing,
         )
-        # optimize
-        optimizer.zero_grad()
         accelerator.backward(loss)
+        # optimize
         optimizer.step()
         scheduler.step()
+        optimizer.zero_grad()
         return dict(loss=loss.item(), lr=optimizer.param_groups[0]['lr'])
 
     @torch.no_grad()
@@ -184,13 +188,13 @@ def main():
 
     # START TRAINING
     logger.info('Start training...')
-    train_data_generator = get_data_generator(
+    train_loader_iterator = get_dataloader_iterator(
         dataloader=train_loader,
         tqdm_kwargs=dict(desc='Epoch', leave=False, disable=not accelerator.is_main_process),
     )
     while step < conf.train.n_steps:
         # get a batch of data
-        _batch = next(train_data_generator)
+        _batch = next(train_loader_iterator)
         # run a step
         model.train()
         train_status = run_step(_batch)

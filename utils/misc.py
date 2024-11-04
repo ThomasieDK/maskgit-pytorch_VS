@@ -157,7 +157,7 @@ def find_resume_checkpoint(exp_dir: str, resume: str):
     return ckpt_path
 
 
-def get_data_generator(dataloader, tqdm_kwargs):
+def get_dataloader_iterator(dataloader, tqdm_kwargs):
     while True:
         for batch in tqdm.tqdm(dataloader, **tqdm_kwargs):
             yield batch
