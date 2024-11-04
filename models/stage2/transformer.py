@@ -189,7 +189,7 @@ class MaskTransformer(nn.Module):
         idx = torch.full((B, L), self.mask_token_id, dtype=torch.long, device=device)
         for t in range(T):
             # after this iteration, n positions remain masked
-            n = math.ceil(self.gamma((t + 1) / T) * L)
+            n = math.floor(self.gamma((t + 1) / T) * L)
             choice_temp = base_choice_temp * (1 - (t + 1) / T)
             idx = self.sample_one_step(n, idx, y, temp, topk, choice_temp)
             yield idx

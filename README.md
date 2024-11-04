@@ -93,12 +93,6 @@ accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot DATAROO
     <td align="center">amused</td>
 </tr>
 <tr>
-    <td width="12%"><img src="/assets/test_img_1.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_1_taming.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_1_llamagen.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_1_amused.png" alt="" /></td>
-</tr>
-<tr>
     <td width="12%"><img src="/assets/test_img_3.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_3_taming.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_3_llamagen.png" alt="" /></td>
@@ -110,15 +104,9 @@ accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot DATAROO
     <td width="12%"><img src="./assets/test_img_2_llamagen.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_2_amused.png" alt="" /></td>
 </tr>
-<tr>
-    <td width="12%"><img src="/assets/test_img_4.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_4_taming.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_4_llamagen.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_4_amused.png" alt="" /></td>
-</tr>
 </table>
 
-The original images are taken from taming-transformers, ImageNet, CelebA-HQ and AFHQ.
+The original images are taken from ImageNet and CelebA-HQ respectively.
 
 <br/>
 
