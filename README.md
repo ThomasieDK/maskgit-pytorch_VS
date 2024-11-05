@@ -2,9 +2,6 @@
 
 Unofficial PyTorch implementation of [MaskGIT](http://arxiv.org/abs/2202.04200). The official Jax implementation can be found [here](https://github.com/google-research/maskgit).
 
-> [!WARNING]
-> The transformer architecture is not exactly the same as the official implementation.
-
 <br/>
 
 
@@ -72,7 +69,7 @@ The pretrained VQGAN from [amused](https://huggingface.co/amused/amused-256) wil
 ## 🚀 Evaluate Stage-1 Models (VQGAN)
 
 ```shell
-accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot DATAROOT
+accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot IMAGENET_DATAROOT
 ```
 
 **Quantitative reconstruction results on ImageNet (256x256)**:
@@ -114,10 +111,21 @@ The original images are taken from ImageNet and CelebA-HQ respectively.
 
 ## 🔥 Train Stage-2 Models (MaskGIT)
 
-To train an unconditional MaskGIT model, run the following command:
+### 🔥  Step 1: cache the latents (optional but highly recommended)
 
 ```shell
+accelerate-launch make_cache.py -c CONFIG --save_dir CACHEDIR [--bspp BATCH_SIZE_PER_PROCESS]
+```
+
+### 🔥  Step 2: start training
+
+To train an unconditional model (e.g. FFHQ):
+
+```shell
+# if not using cached latents
 accelerate-launch train.py -c CONFIG -e EXPDIR
+# if using cached latents
+accelerate-launch train.py -c CONFIG -e EXPDIR --data.name cached --data.root CACHEDIR
 ```
 
 <br/>

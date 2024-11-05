@@ -10,10 +10,13 @@ dataloader:
   pin_memory: true
   prefetch_factor: 2
 
+vqmodel:
+  model_name: amused/amused-256
+
 transformer:
   target: models.stage2.transformer.MaskTransformer
   params:
-    vocab_size: 16384
+    vocab_size: 8192
     embed_dim: 768
     n_heads: 8
     n_layers: 12
@@ -21,9 +24,6 @@ transformer:
     n_classes: 0
     dropout: 0.1
     mask_schedule_type: cosine
-
-vqmodel:
-  model_name: llamagen/vq_ds16_c2i
 
 
 train:

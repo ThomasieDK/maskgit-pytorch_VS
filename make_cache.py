@@ -75,7 +75,10 @@ def main():
     with torch.no_grad():
         for batch in tqdm.tqdm(train_loader, desc='Caching', disable=not accelerator.is_main_process):
             # get data
-            x, y = batch if isinstance(batch, (list, tuple)) else batch, None
+            if isinstance(batch, (list, tuple)):
+                x, y = batch
+            else:
+                x, y = batch, None
             B = x.shape[0]
             N = conf.data.img_size // 16  # TODO: downsample factor is hardcoded
 
@@ -94,6 +97,8 @@ def main():
             h_flip = accelerator.gather_for_metrics(h_flip)
             quant_flip = accelerator.gather_for_metrics(quant_flip)
             idx_flip = accelerator.gather_for_metrics(idx_flip)
+            if y is not None:
+                y = accelerator.gather_for_metrics(y)
 
             # save to npz on main process
             if accelerator.is_main_process:
