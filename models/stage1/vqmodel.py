@@ -178,7 +178,9 @@ class aMUSEdVQModelWrapper(nn.Module):
         return dict(h=h, quant=quant, indices=indices)
 
     def decode(self, z: Union[Tensor, FloatTensor]):
-        return self.vqmodel.decode(z).sample
+        h = self.vqmodel.post_quant_conv(z)
+        dec = self.vqmodel.decoder(h)
+        return dec
 
     def decode_indices(self, indices: Tensor, shape: Tuple[int, ...]):
         quant = self.vqmodel.quantize.get_codebook_entry(indices, shape)

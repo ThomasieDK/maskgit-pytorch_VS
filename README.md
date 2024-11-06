@@ -146,6 +146,24 @@ accelerate-launch train.py -c CONFIG -e EXPDIR --data.name cached --data.root CA
 
 
 
+## 🎨 Sample
+
+```shell
+accelerate-launch sample.py -c CONFIG \
+                            --weights WEIGHTS \
+                            --n_samples N_SAMPLES \
+                            --save_dir SAVEDIR \
+                            [--bspp BATCH_SIZE_PER_PROCESS] \
+                            [--sampling_steps SAMPLING_STEPS] \
+                            [--topk TOPK] \
+                            [--temp TEMP] \
+                            [--base_choice_temp BASE_CHOICE_TEMP]
+```
+
+<br/>
+
+
+
 ## 🖋️ References
 
 MaskGIT:
