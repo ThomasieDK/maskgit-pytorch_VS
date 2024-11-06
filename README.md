@@ -2,6 +2,15 @@
 
 Unofficial PyTorch implementation of [MaskGIT](http://arxiv.org/abs/2202.04200). The official Jax implementation can be found [here](https://github.com/google-research/maskgit).
 
+> [!NOTE]
+> This repo only focuses on training the second stage of MaskGIT, i.e., the Masked Visual Token Modeling (MVTM) part.
+> For the first stage, we support loading the pretrained VQGAN from
+> [titok](https://github.com/bytedance/1d-tokenizer),
+> [taming-transformers](https://github.com/CompVis/taming-transformers),
+> [llamagen](https://github.com/FoundationVision/LlamaGen) or
+> [amused](https://huggingface.co/amused/amused-256).
+> Note that the titok version is a PyTorch reimplementation of the VQGAN used in the official MaskGIT, with weights converted from the original Jax model.
+
 <br/>
 
 
@@ -39,11 +48,12 @@ pip install -r requirements.txt
 
 ### 🤖️ Stage-1 Models (VQGAN)
 
-> [!NOTE]
-> This repo only focuses on the stage-2 of MaskGIT, i.e., the Masked Visual Token Modeling (MVTM) part.
-We support loading the pretrained VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers), 
-> [llamagen](https://github.com/FoundationVision/LlamaGen) and [amused](https://huggingface.co/amused/amused-256) 
-> as the stage-1 models.
+The pretrained VQGAN from [titok](https://github.com/bytedance/1d-tokenizer) can be downloaded by:
+
+```shell
+mkdir -p ckpts/titok
+wget 'https://huggingface.co/fun-research/TiTok/resolve/main/maskgit-vqgan-imagenet-f16-256.bin' -O 'ckpts/titok/maskgit-vqgan-imagenet-f16-256.bin'
+```
 
 The pretrained VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers) can be downloaded by:
 
@@ -69,34 +79,38 @@ The pretrained VQGAN from [amused](https://huggingface.co/amused/amused-256) wil
 ## 🚀 Evaluate Stage-1 Models (VQGAN)
 
 ```shell
-accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot IMAGENET_DATAROOT
+accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot IMAGENET_DATAROOT [--bspp BATCH_SIZE_PER_PROCESS]
 ```
 
 **Quantitative reconstruction results on ImageNet (256x256)**:
 
-|            Model Name             |  PSNR ↑   |  SSIM ↑  | LPIPS ↓  |  rFID ↓  |
-|:---------------------------------:|:---------:|:--------:|:--------:|:--------:|
-| `taming/vqgan_imagenet_f16_16384` |   20.01   |   0.50   |   0.17   |   5.00   |
-|      `llamagen/vq_ds16_c2i`       |   20.79   |   0.56   | **0.14** | **2.19** |
-|        `amused/amused-256`        | **21.81** | **0.58** | **0.14** |   4.41   |
+|               Model Name               |  PSNR ↑   |  SSIM ↑  | LPIPS ↓  |  rFID ↓  |
+|:--------------------------------------:|:---------:|:--------:|:--------:|:--------:|
+| `titok/maskgit-vqgan-imagenet-f16-256` |   18.15   |   0.43   |   0.20   | **2.12** |
+|   `taming/vqgan_imagenet_f16_16384`    |   20.01   |   0.50   |   0.17   |   5.00   |
+|         `llamagen/vq_ds16_c2i`         |   20.79   |   0.56   | **0.14** |   2.19   |
+|          `amused/amused-256`           | **21.81** | **0.58** | **0.14** |   4.41   |
 
 **Qualitative reconstruction results (384x384)**:
 
 <table>
 <tr>
     <td align="center">original</td>
+    <td align="center">titok</td>
     <td align="center">taming</td>
     <td align="center">llamagen</td>
     <td align="center">amused</td>
 </tr>
 <tr>
     <td width="12%"><img src="/assets/test_img_3.png" alt="" /></td>
+    <td width="12%"><img src="./assets/test_img_3_titok.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_3_taming.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_3_llamagen.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_3_amused.png" alt="" /></td>
 </tr>
 <tr>
     <td width="12%"><img src="/assets/test_img_2.png" alt="" /></td>
+    <td width="12%"><img src="./assets/test_img_2_titok.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_2_taming.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_2_llamagen.png" alt="" /></td>
     <td width="12%"><img src="./assets/test_img_2_amused.png" alt="" /></td>

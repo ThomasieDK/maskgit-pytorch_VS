@@ -1,3 +1,4 @@
+import warnings
 from typing import Tuple, Union
 from omegaconf import OmegaConf
 
@@ -7,12 +8,14 @@ from torch import Tensor, FloatTensor
 
 from diffusers import VQModel as aMUSEdVQModel
 from .taming.vqmodel import VQModel as TamingVQModel
+from .titok.tokenizer import PretrainedTokenizer as TiTokVQModel
 from .llamagen.vq_model import VQModel as LlamaGenVQModel, ModelArgs as LlamaGenModelArgs
 
 
 AVAILABLE_MODEL_NAMES = (
     'taming/vqgan_imagenet_f16_1024',
     'taming/vqgan_imagenet_f16_16384',
+    'titok/maskgit-vqgan-imagenet-f16-256',
     'amused/amused-256',
     'amused/amused-512',
     'llamagen/vq_ds16_c2i',
@@ -38,6 +41,17 @@ def make_vqmodel(name: str):
         del weights
         # wrap model
         model = TamingVQModelWrapper(vqmodel)
+        model.eval()
+        model.requires_grad_(False)
+        return model
+
+    elif 'titok' in name:
+        # build model & load weights
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', message=r"You are using `torch.load` with `weights_only=False`*")
+            vqmodel = TiTokVQModel(f'ckpts/{name}.bin')
+        # wrap model
+        model = TiTokVQModelWrapper(vqmodel)
         model.eval()
         model.requires_grad_(False)
         return model
@@ -97,6 +111,30 @@ class TamingVQModelWrapper(nn.Module):
     def decode_indices(self, indices: Tensor, shape: Tuple[int, ...]):
         quant = self.vqmodel.quantize.get_codebook_entry(indices, shape)
         return self.decode(quant)
+
+
+class TiTokVQModelWrapper(nn.Module):
+    def __init__(self, vqmodel: TiTokVQModel):
+        super().__init__()
+        self.vqmodel = vqmodel
+
+    def forward(self, x: Tensor):
+        enc = self.encode(x)
+        rec = self.decode(enc['quant'])
+        return rec
+
+    def encode(self, x: Tensor):
+        hidden_states = self.vqmodel.encoder((x + 1) / 2)
+        quantized_states, codebook_indices, codebook_loss = self.vqmodel.quantize(hidden_states)
+        return dict(h=hidden_states, quant=quantized_states, indices=codebook_indices)
+
+    def decode(self, z: Tensor):
+        rec = self.vqmodel.decoder(z)
+        return rec * 2 - 1
+
+    def decode_indices(self, indices: Tensor, shape: Tuple[int, ...] = None):
+        dec = self.vqmodel.decode(indices)
+        return dec * 2 - 1
 
 
 class LlamaGenVQModelWrapper(nn.Module):
