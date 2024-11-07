@@ -4,18 +4,19 @@ from omegaconf import OmegaConf
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor, FloatTensor
 
 from diffusers import VQModel as aMUSEdVQModel
+from .maskgit.tokenizer import PretrainedTokenizer as MaskGITVQModel
 from .taming.vqmodel import VQModel as TamingVQModel
-from .titok.tokenizer import PretrainedTokenizer as TiTokVQModel
 from .llamagen.vq_model import VQModel as LlamaGenVQModel, ModelArgs as LlamaGenModelArgs
 
 
 AVAILABLE_MODEL_NAMES = (
+    'maskgit-vqgan-imagenet-f16-256',
     'taming/vqgan_imagenet_f16_1024',
     'taming/vqgan_imagenet_f16_16384',
-    'titok/maskgit-vqgan-imagenet-f16-256',
     'amused/amused-256',
     'amused/amused-512',
     'llamagen/vq_ds16_c2i',
@@ -25,7 +26,18 @@ AVAILABLE_MODEL_NAMES = (
 def make_vqmodel(name: str):
     assert name in AVAILABLE_MODEL_NAMES, f"Model {name} not available"
 
-    if 'taming' in name:
+    if 'maskgit' in name:
+        # build model & load weights
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', message=r"You are using `torch.load` with `weights_only=False`*")
+            vqmodel = MaskGITVQModel(f'ckpts/{name}.bin')
+        # wrap model
+        model = MaskGITVQModelWrapper(vqmodel)
+        model.eval()
+        model.requires_grad_(False)
+        return model
+
+    elif 'taming' in name:
         from pytorch_lightning.callbacks import ModelCheckpoint
         torch.serialization.add_safe_globals([ModelCheckpoint])
         # load config & build model
@@ -41,17 +53,6 @@ def make_vqmodel(name: str):
         del weights
         # wrap model
         model = TamingVQModelWrapper(vqmodel)
-        model.eval()
-        model.requires_grad_(False)
-        return model
-
-    elif 'titok' in name:
-        # build model & load weights
-        with warnings.catch_warnings():
-            warnings.filterwarnings('ignore', message=r"You are using `torch.load` with `weights_only=False`*")
-            vqmodel = TiTokVQModel(f'ckpts/{name}.bin')
-        # wrap model
-        model = TiTokVQModelWrapper(vqmodel)
         model.eval()
         model.requires_grad_(False)
         return model
@@ -113,8 +114,8 @@ class TamingVQModelWrapper(nn.Module):
         return self.decode(quant)
 
 
-class TiTokVQModelWrapper(nn.Module):
-    def __init__(self, vqmodel: TiTokVQModel):
+class MaskGITVQModelWrapper(nn.Module):
+    def __init__(self, vqmodel: MaskGITVQModel):
         super().__init__()
         self.vqmodel = vqmodel
 
@@ -132,7 +133,7 @@ class TiTokVQModelWrapper(nn.Module):
         rec = self.vqmodel.decoder(z)
         return rec * 2 - 1
 
-    def decode_indices(self, indices: Tensor, shape: Tuple[int, ...] = None):
+    def decode_indices(self, indices: Tensor, shape: Tuple[int, ...] = None):  # noqa
         dec = self.vqmodel.decode(indices)
         return dec * 2 - 1
 
@@ -151,6 +152,7 @@ class LlamaGenVQModelWrapper(nn.Module):
         h = self.vqmodel.quant_conv(h)
         quant, emb_loss, info = self.vqmodel.quantize(h)
         indices = info[-1]
+        h = F.normalize(h, p=2, dim=1)
         return dict(h=h, quant=quant, indices=indices)
 
     def decode(self, z: Tensor):
