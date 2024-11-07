@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
 from datasets import CachedFolder
-from models.stage1.vqmodel import make_vqmodel
+from models import make_vqmodel, EMA
 from utils.data import load_data
 from utils.logger import get_logger
 from utils.misc import create_exp_dir, find_resume_checkpoint, instantiate_from_config
@@ -78,7 +78,7 @@ def main():
     logger.info(f'Mixed precision: {accelerator.mixed_precision}')
     accelerator.wait_for_everyone()
 
-    # BUILD DATASET & DATALOADER
+    # BUILD DATASET AND DATALOADER
     assert conf.train.batch_size % accelerator.num_processes == 0
     bspp = conf.train.batch_size // accelerator.num_processes
     train_set = load_data(conf.data, split='all' if conf.data.name.lower() == 'ffhq' else 'train')
@@ -97,6 +97,7 @@ def main():
 
     # BUILD MODEL AND OPTIMIZERS
     model = instantiate_from_config(conf.transformer)
+    ema = EMA(model.parameters(), **getattr(conf.train, 'ema', dict()))
     optimizer = instantiate_from_config(conf.train.optim, params=model.parameters())
     scheduler = instantiate_from_config(conf.train.sched, optimizer=optimizer)
     logger.info(f'Number of parameters of transformer: {sum(p.numel() for p in model.parameters()):,}')
@@ -111,6 +112,10 @@ def main():
         ckpt_model = torch.load(os.path.join(resume_path, 'model.pt'), map_location='cpu', weights_only=True)
         model.load_state_dict(ckpt_model['model'])
         logger.info(f'Successfully load model from {resume_path}')
+        # load ema
+        ckpt_ema = torch.load(os.path.join(resume_path, 'ema.pt'), map_location='cpu', weights_only=True)
+        ema.load_state_dict(ckpt_ema['ema'])
+        logger.info(f'Successfully load ema from {resume_path}')
         # load optimizer
         ckpt_optimizer = torch.load(os.path.join(resume_path, 'optimizer.pt'), map_location='cpu', weights_only=True)
         optimizer.load_state_dict(ckpt_optimizer['optimizer'])
@@ -123,21 +128,24 @@ def main():
         ckpt_meta = torch.load(os.path.join(resume_path, 'meta.pt'), map_location='cpu', weights_only=True)
         step = ckpt_meta['step'] + 1
         logger.info(f'Restart training at step {step}')
-        del ckpt_model, ckpt_optimizer, ckpt_scheduler, ckpt_meta
+        del ckpt_model, ckpt_ema, ckpt_optimizer, ckpt_scheduler, ckpt_meta
 
     # PREPARE FOR DISTRIBUTED MODE AND MIXED PRECISION
-    model, optimizer, scheduler, train_loader = accelerator.prepare(
-        model, optimizer, scheduler, train_loader,  # type: ignore
-    )
+    model, optimizer, scheduler, train_loader = accelerator.prepare(model, optimizer, scheduler, train_loader)  # type: ignore
     unwrapped_model = accelerator.unwrap_model(model)
+    ema.to(device)
     accelerator.wait_for_everyone()
 
     # TRAINING FUNCTIONS
     @accelerator.on_main_process
     def save_ckpt(save_path: str):
         os.makedirs(save_path, exist_ok=True)
-        # save model
+        # save model and ema model
         accelerator.save(dict(model=unwrapped_model.state_dict()), os.path.join(save_path, 'model.pt'))
+        with ema.scope(model.parameters()):
+            accelerator.save(dict(model=unwrapped_model.state_dict()), os.path.join(save_path, 'model_ema.pt'))
+        # save ema
+        accelerator.save(dict(ema=ema.state_dict()), os.path.join(save_path, 'ema.pt'))
         # save optimizer
         accelerator.save(dict(optimizer=optimizer.state_dict()), os.path.join(save_path, 'optimizer.pt'))
         # save scheduler
@@ -172,11 +180,13 @@ def main():
                 label_smoothing=conf.train.label_smoothing,
             )
 
+        # backward
         accelerator.backward(loss)
 
         # optimize
         optimizer.step()
         scheduler.step()
+        ema.update(model.parameters())
         optimizer.zero_grad()
         return dict(loss=loss.item(), lr=optimizer.param_groups[0]['lr'])
 
@@ -185,7 +195,8 @@ def main():
         nrow = math.ceil(math.sqrt(conf.train.n_samples))
         n_samples = conf.train.n_samples // accelerator.num_processes
         fm_size = conf.data.img_size // 16  # TODO: downsample factor is hardcoded
-        *_, idx = unwrapped_model.sample_loop(B=n_samples, L=fm_size ** 2, T=8)
+        with ema.scope(model.parameters()):
+            *_, idx = unwrapped_model.sample_loop(B=n_samples, L=fm_size ** 2, T=8)
         samples = vqmodel.decode_indices(idx, shape=(n_samples, fm_size, fm_size, -1)).clamp(-1, 1)
         samples = accelerator.gather(samples).cpu()
         if accelerator.is_main_process:

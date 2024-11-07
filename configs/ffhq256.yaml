@@ -32,6 +32,11 @@ train:
 
   label_smoothing: 0.1
 
+  ema:
+    decay: 0.9999
+    ema_warmup_type: crowsonkb
+    power: 0.75
+
   print_freq: 100
   save_freq: 50000
   sample_freq: 5000

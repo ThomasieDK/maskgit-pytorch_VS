@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 torch.backends.cudnn.benchmark = True
 
-from models.stage1.vqmodel import make_vqmodel
+from models import make_vqmodel
 from utils.data import load_data
 from utils.logger import get_logger
 

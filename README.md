@@ -5,7 +5,7 @@ Unofficial PyTorch implementation of [MaskGIT](http://arxiv.org/abs/2202.04200).
 > [!NOTE]
 > This repo focuses on the second stage of MaskGIT, i.e., the Masked Visual Token Modeling (MVTM) part.
 > We use the pretrained VQGANs from the community as the first stage image tokenizers.
-> See the [Pretrained Models](#-pretrained-models) section for more details.
+> See the [Pretrained Models](#%EF%B8%8F-pretrained-models) section for more details.
 
 <br/>
 

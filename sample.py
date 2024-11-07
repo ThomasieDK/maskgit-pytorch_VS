@@ -7,7 +7,7 @@ from omegaconf import OmegaConf
 import accelerate
 import torch
 
-from models.stage1.vqmodel import make_vqmodel
+from models import make_vqmodel
 from utils.logger import get_logger
 from utils.image import image_norm_to_float, save_images
 from utils.misc import instantiate_from_config, amortize

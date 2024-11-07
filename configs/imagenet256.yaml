@@ -12,12 +12,12 @@ dataloader:
   prefetch_factor: 2
 
 vqmodel:
-  model_name: llamagen/vq_ds16_c2i
+  model_name: maskgit-vqgan-imagenet-f16-256
 
 transformer:
   target: models.stage2.transformer.MaskTransformer
   params:
-    vocab_size: 16384
+    vocab_size: 1024
     embed_dim: 768
     n_heads: 8
     n_layers: 24
@@ -33,6 +33,10 @@ train:
 
   label_smoothing: 0.1
   cond_drop_prob: 0.1
+
+  ema:
+    decay: 0.9999
+    ema_warmup_type: crowsonkb
 
   print_freq: 100
   save_freq: 50000
