@@ -12,3 +12,4 @@ tensorboard~=2.18.0
 einops~=0.8.0
 lpips~=0.1.4
 scikit-image~=0.24.0
+git+https://github.com/toshas/torch-fidelity.git@master#egg=torch-fidelity

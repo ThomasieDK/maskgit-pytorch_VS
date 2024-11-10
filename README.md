@@ -44,14 +44,16 @@ pip install -r requirements.txt
 
 ### 🤖️ Stage-1 Models (VQGAN)
 
-The pretrained VQGAN used in the original MaskGIT paper is implemented in Jax. The community has converted the model weights to PyTorch, which can be downloaded by:
+We support loading the pretrained VQGAN models from several open-source projects, including:
+
+**VQGAN-MaskGIT**: The pretrained VQGAN used in the original MaskGIT paper is implemented in Jax. The community has converted the model weights to PyTorch, which can be downloaded by:
 
 ```shell
 mkdir -p ckpts
 wget 'https://huggingface.co/fun-research/TiTok/resolve/main/maskgit-vqgan-imagenet-f16-256.bin' -O 'ckpts/maskgit-vqgan-imagenet-f16-256.bin'
 ```
 
-The pretrained VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers) can be downloaded by:
+**VQGAN-Taming**: The pretrained VQGAN from [taming-transformers](https://github.com/CompVis/taming-transformers) can be downloaded by:
 
 ```shell
 mkdir -p ckpts/taming
@@ -59,14 +61,14 @@ wget 'https://heibox.uni-heidelberg.de/f/867b05fc8c4841768640/?dl=1' -O 'ckpts/t
 wget 'https://heibox.uni-heidelberg.de/f/274fb24ed38341bfa753/?dl=1' -O 'ckpts/taming/vqgan_imagenet_f16_16384.yaml'
 ```
 
-The pretrained VQGAN from [llamagen](https://github.com/FoundationVision/LlamaGen) can be downloaded by:
+**VQGAN-LlamaGen**: The pretrained VQGAN from [llamagen](https://github.com/FoundationVision/LlamaGen) can be downloaded by:
 
 ```shell
 mkdir -p ckpts/llamagen
 wget 'https://huggingface.co/FoundationVision/LlamaGen/resolve/main/vq_ds16_c2i.pt' -O 'ckpts/llamagen/vq_ds16_c2i.pt'
 ```
 
-The pretrained VQGAN from [amused](https://huggingface.co/amused/amused-256) will be automatically downloaded when running the training / evaluation script.
+**VQGAN-aMUSEd**: The pretrained VQGAN from [amused](https://huggingface.co/amused/amused-256) will be automatically downloaded when running the training / evaluation script.
 
 <br/>
 
@@ -80,12 +82,12 @@ accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot IMAGENE
 
 **Quantitative reconstruction results on ImageNet (256x256) validation set**:
 
-|              Model Name               |  PSNR ↑   |  SSIM ↑  | LPIPS ↓  |  rFID ↓  |
-|:-------------------------------------:|:---------:|:--------:|:--------:|:--------:|
-|   `maskgit-vqgan-imagenet-f16-256`    |   18.15   |   0.43   |   0.20   | **2.12** |
-|   `taming/vqgan_imagenet_f16_16384`   |   20.01   |   0.50   |   0.17   |   5.00   |
-|        `llamagen/vq_ds16_c2i`         |   20.79   |   0.56   | **0.14** |   2.19   |
-|          `amused/amused-256`          | **21.81** | **0.58** | **0.14** |   4.41   |
+|              Model Name               | Codebook Size | Codebook Dim |  PSNR ↑   |  SSIM ↑  | LPIPS ↓  |  rFID ↓  |
+|:-------------------------------------:|:-------------:|:------------:|:---------:|:--------:|:--------:|:--------:|
+|   `maskgit-vqgan-imagenet-f16-256`    |     1024      |     256      |   18.15   |   0.43   |   0.20   | **2.12** |
+|   `taming/vqgan_imagenet_f16_16384`   |     16384     |     256      |   20.01   |   0.50   |   0.17   |   5.00   |
+|        `llamagen/vq_ds16_c2i`         |     16384     |      8       |   20.79   |   0.56   | **0.14** |   2.19   |
+|          `amused/amused-256`          |     8192      |      64      | **21.81** | **0.58** | **0.14** |   4.41   |
 
 **Qualitative reconstruction results (384x384)**:
 
@@ -114,6 +116,7 @@ accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot IMAGENE
 </table>
 
 The original images are taken from ImageNet and CelebA-HQ respectively.
+Better rFID doesn't necessarily mean better visual quality.
 
 <br/>
 
@@ -121,7 +124,16 @@ The original images are taken from ImageNet and CelebA-HQ respectively.
 
 ## 🔥 Train Stage-2 Models (MaskGIT)
 
-### 🔥  Step 1: cache the latents (optional but highly recommended)
+### 🔥  Step 1: cache the latents (optional)
+
+Caching the latents of VQGAN could greatly accelerate the training and decrease the memory usage in the stage-2 training. However, you need to make sure you have enough disk space.
+
+|     Dataset      |   VQGAN type   | Disk space required |
+|:----------------:|:--------------:|:-------------------:|
+| ImageNet (train) | VQGAN-MaskGIT  |       \> 1.3T       |
+| ImageNet (train) | VQGAN-LlamaGen |       \> 49G        |
+|       FFHQ       | VQGAN-LlamaGen |       \> 2.7G       |
+|       FFHQ       |  VQGAN-aMUSEd  |       \> 18G        |
 
 ```shell
 accelerate-launch make_cache.py -c CONFIG --save_dir CACHEDIR [--bspp BATCH_SIZE_PER_PROCESS]
@@ -133,9 +145,20 @@ To train an unconditional model (e.g. FFHQ):
 
 ```shell
 # if not using cached latents
-accelerate-launch train.py -c CONFIG -e EXPDIR
+accelerate-launch train.py -c CONFIG -e EXPDIR [-mp MIXED_PRECISION]
 # if using cached latents
-accelerate-launch train.py -c CONFIG -e EXPDIR --data.name cached --data.root CACHEDIR
+accelerate-launch train.py -c CONFIG -e EXPDIR [-mp MIXED_PRECISION] \
+                           --data.name cached --data.root CACHEDIR
+```
+
+To train a class-conditional model (e.g. ImageNet):
+
+```shell
+# if not using cached latents
+accelerate-launch train_c2i.py -c CONFIG -e EXPDIR [-mp MIXED_PRECISION]
+# if using cached latents
+accelerate-launch train_c2i.py -c CONFIG -e EXPDIR [-mp MIXED_PRECISION] \
+                               --data.name cached --data.root CACHEDIR
 ```
 
 <br/>
