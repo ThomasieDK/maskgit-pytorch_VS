@@ -89,7 +89,8 @@ def main():
     logger.info(f'Total batch size: {conf.train.batch_size}')
 
     # LOAD PRETRAINED VQMODEL
-    vqmodel = make_vqmodel(conf.vqmodel.model_name)
+    with accelerator.main_process_first():
+        vqmodel = make_vqmodel(conf.vqmodel.model_name)
     vqmodel = vqmodel.requires_grad_(False).eval().to(device)
     logger.info('=' * 19 + ' Model Info ' + '=' * 19)
     logger.info(f'Successfully load pretrained vqmodel: {conf.vqmodel.model_name}')
