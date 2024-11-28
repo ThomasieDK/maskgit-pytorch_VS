@@ -153,7 +153,7 @@ class MaskTransformer(nn.Module):
 
     @torch.no_grad()
     def sample_one_step(
-            self, n: int, idx: Tensor, y: Tensor = None,
+            self, n: int, idx: Tensor, y: Tensor = None, cfg: float = 1.0,
             temp: float = 1.0, topk: int = None, choice_temp: float = 0.0,
     ):
         """ idx (B, L), y (B, 1) -> sampled_idx (B, L) """
@@ -161,6 +161,10 @@ class MaskTransformer(nn.Module):
         mask = torch.eq(idx, self.mask_token_id)
         # get probabilities
         logits = self(idx, y) / temp
+        if y is not None and cfg != 1.0:
+            # FIXME: cfg results are bad, need to investigate
+            logits_uncond = self(idx, y, cond_drop_prob=1.0) / temp
+            logits = cfg * logits + (1 - cfg) * logits_uncond
         if topk is not None:
             v, _ = torch.topk(logits, min(topk, L), largest=True, sorted=True)
             logits[logits < v[..., [-1]]] = float('-inf')
@@ -181,7 +185,7 @@ class MaskTransformer(nn.Module):
 
     @torch.no_grad()
     def sample_loop(
-            self, B: int, L: int, T: int, y: Tensor = None,
+            self, B: int, L: int, T: int, y: Tensor = None, cfg: float = 1.0,
             temp: float = 1.0, topk: int = None, base_choice_temp: float = 4.5,
     ):
         assert T <= L, f'The number of steps T should <= the sequence length L, but got T={T} and L={L}'
@@ -191,5 +195,5 @@ class MaskTransformer(nn.Module):
             # after this iteration, n positions remain masked
             n = math.floor(self.gamma((t + 1) / T) * L)
             choice_temp = base_choice_temp * (1 - (t + 1) / T)
-            idx = self.sample_one_step(n, idx, y, temp, topk, choice_temp)
+            idx = self.sample_one_step(n, idx, y, cfg, temp, topk, choice_temp)
             yield idx

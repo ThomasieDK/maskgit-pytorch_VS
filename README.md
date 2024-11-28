@@ -2,16 +2,14 @@
 
 Unofficial PyTorch implementation of [MaskGIT](http://arxiv.org/abs/2202.04200). The official Jax implementation can be found [here](https://github.com/google-research/maskgit).
 
-> [!NOTE]
-> This repo focuses on the second stage of MaskGIT, i.e., the Masked Visual Token Modeling (MVTM) part.
-> We use the pretrained VQGANs from the community as the first stage image tokenizers.
-> See the [Pretrained Models](#%EF%B8%8F-pretrained-models) section for more details.
+> This repo mainly focuses on the second stage of MaskGIT, i.e., Masked Visual Token Modeling (MVTM) with a bidirectional Transformer.
+> For the first stage (image tokenization), we directly use the pretrained VQGANs from the community.
 
 <br/>
 
 
 
-## 🛠️ Installation
+## Installation
 
 > The code is tested with python 3.12, torch 2.4.1 and cuda 12.4.
 
@@ -40,9 +38,9 @@ pip install -r requirements.txt
 
 
 
-## 🤖️ Pretrained Models
+## Stage-1 (VQGAN)
 
-### 🤖️ Stage-1 Models (VQGAN)
+### Download
 
 We support loading the pretrained VQGAN models from several open-source projects, including:
 
@@ -74,11 +72,23 @@ wget 'https://huggingface.co/FoundationVision/LlamaGen/resolve/main/vq_ds16_c2i.
 
 
 
-## 🚀 Evaluate Stage-1 Models (VQGAN)
+### Evaluation
 
 ```shell
-accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot IMAGENET_DATAROOT [--bspp BATCH_SIZE_PER_PROCESS]
+accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME \
+                                      --dataroot IMAGENET_DATAROOT \ 
+                                      [--save_dir SAVE_DIR] \
+                                      [--bspp BATCH_SIZE_PER_PROCESS]
 ```
+
+- `--model_name`: name of the pretrained VQGAN model. Options:
+  - `maskgit-vqgan-imagenet-f16-256`
+  - `taming/vqgan_imagenet_f16_16384`
+  - `llamagen/vq_ds16_c2i`
+  - `amused/amused-256`
+- `--dataroot`: the root directory of the ImageNet dataset.
+- `--save_dir`: the directory to save the reconstructed images.
+- `--bspp`: batch size per process.
 
 **Quantitative reconstruction results on ImageNet (256x256) validation set**:
 
@@ -100,78 +110,88 @@ accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME --dataroot IMAGENE
     <td align="center">amused</td>
 </tr>
 <tr>
-    <td width="12%"><img src="/assets/test_img_3.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_3_maskgit.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_3_taming.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_3_llamagen.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_3_amused.png" alt="" /></td>
+    <td width="12%"><img src="/assets/stage1/test_img_3.png" alt="" /></td>
+    <td width="12%"><img src="./assets/stage1/test_img_3_maskgit.png" alt="" /></td>
+    <td width="12%"><img src="./assets/stage1/test_img_3_taming.png" alt="" /></td>
+    <td width="12%"><img src="./assets/stage1/test_img_3_llamagen.png" alt="" /></td>
+    <td width="12%"><img src="./assets/stage1/test_img_3_amused.png" alt="" /></td>
 </tr>
 <tr>
-    <td width="12%"><img src="/assets/test_img_2.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_2_maskgit.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_2_taming.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_2_llamagen.png" alt="" /></td>
-    <td width="12%"><img src="./assets/test_img_2_amused.png" alt="" /></td>
+    <td width="12%"><img src="/assets/stage1/test_img_2.png" alt="" /></td>
+    <td width="12%"><img src="./assets/stage1/test_img_2_maskgit.png" alt="" /></td>
+    <td width="12%"><img src="./assets/stage1/test_img_2_taming.png" alt="" /></td>
+    <td width="12%"><img src="./assets/stage1/test_img_2_llamagen.png" alt="" /></td>
+    <td width="12%"><img src="./assets/stage1/test_img_2_amused.png" alt="" /></td>
 </tr>
 </table>
 
 The original images are taken from ImageNet and CelebA-HQ respectively.
-Better rFID doesn't necessarily mean better visual quality.
+It can be observed that better rFID doesn't necessarily mean better visual quality.
 
 <br/>
 
 
 
-## 🔥 Train Stage-2 Models (MaskGIT)
+## Stage-2 (Transformer)
 
-### 🔥  Step 1: cache the latents (optional)
+### Training
 
-Caching the latents of VQGAN could greatly accelerate the training and decrease the memory usage in the stage-2 training. However, you need to make sure you have enough disk space.
+**Step 1 (optional): cache the latents**.
+Caching the latents encoded by VQGAN can greatly accelerate the training and decrease the memory usage in the stage-2 training.
+However, make sure you have enough disk space to store the cached latents.
 
-|     Dataset      |   VQGAN type   | Disk space required |
-|:----------------:|:--------------:|:-------------------:|
-| ImageNet (train) | VQGAN-MaskGIT  |       \> 1.3T       |
-| ImageNet (train) | VQGAN-LlamaGen |       \> 49G        |
-|       FFHQ       | VQGAN-LlamaGen |       \> 2.7G       |
-|       FFHQ       |  VQGAN-aMUSEd  |       \> 18G        |
+|         Dataset         |   VQGAN type   | Disk space required |
+|:-----------------------:|:--------------:|:-------------------:|
+|          FFHQ           |  VQGAN-aMUSEd  |       \> 18G        |
+| ImageNet (training set) | VQGAN-MaskGIT  |       \> 1.3T       |
 
 ```shell
 accelerate-launch make_cache.py -c CONFIG --save_dir CACHEDIR [--bspp BATCH_SIZE_PER_PROCESS]
 ```
 
-### 🔥  Step 2: start training
+- `-c`: path to the config file, e.g., `./configs/imagenet256.yaml`.
+- `--save_dir`: the directory to save the cached latents.
+- `--bspp`: batch size per process.
 
-To train an unconditional model (e.g. FFHQ):
+**Step 2: start training**.
+To train an **unconditional** model (e.g. FFHQ), run the following command:
 
 ```shell
 # if not using cached latents
-accelerate-launch train.py -c CONFIG -e EXPDIR [-mp MIXED_PRECISION]
+accelerate-launch train.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION]
 # if using cached latents
-accelerate-launch train.py -c CONFIG -e EXPDIR [-mp MIXED_PRECISION] \
+accelerate-launch train.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION] \
                            --data.name cached --data.root CACHEDIR
 ```
 
-To train a class-conditional model (e.g. ImageNet):
+To train a **class-conditional** model (e.g. ImageNet), run the following command:
 
 ```shell
 # if not using cached latents
-accelerate-launch train_c2i.py -c CONFIG -e EXPDIR [-mp MIXED_PRECISION]
+accelerate-launch train_c2i.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION]
 # if using cached latents
-accelerate-launch train_c2i.py -c CONFIG -e EXPDIR [-mp MIXED_PRECISION] \
+accelerate-launch train_c2i.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION] \
                                --data.name cached --data.root CACHEDIR
 ```
+
+- `-c`: path to the config file, e.g., `./configs/imagenet256.yaml`.
+- `-e`: the directory to save the experiment logs. Default: `./runs/<current time>`.
+- `-mp`: mixed precision training. Options: `no`, `fp16`, `bf16`.
 
 <br/>
 
 
 
-## 🎨 Sample
+### Sampling
+
+To sample from the trained **unconditional** model (e.g., FFHQ), run the following command:
 
 ```shell
 accelerate-launch sample.py -c CONFIG \
                             --weights WEIGHTS \
                             --n_samples N_SAMPLES \
                             --save_dir SAVEDIR \
+                            [--seed SEED] \
                             [--bspp BATCH_SIZE_PER_PROCESS] \
                             [--sampling_steps SAMPLING_STEPS] \
                             [--topk TOPK] \
@@ -179,11 +199,86 @@ accelerate-launch sample.py -c CONFIG \
                             [--base_choice_temp BASE_CHOICE_TEMP]
 ```
 
+- `-c`: path to the config file, e.g., `./configs/ffhq256.yaml`.
+- `--weights`: path to the trained model weights.
+- `--n_samples`: number of samples to generate.
+- `--save_dir`: the directory to save the generated samples.
+- `--seed`: random seed. Default: 8888.
+- `--bspp`: batch size per process. Default: 100.
+- `--sampling_steps`: number of sampling steps. Default: 12.
+- `--topk`: only select from the top-k tokens in each sampling step. Default: None.
+- `--temp`: softmax temperature. Default: 1.0.
+- `--base_choice_temp`: temperature for gumbel noise. Default: 4.5.
+
+To sample from the trained **class-conditional** model (e.g., ImageNet), run the following command:
+
+```shell
+accelerate-launch sample_c2i.py -c CONFIG \
+                                --weights WEIGHTS \
+                                --n_samples N_SAMPLES \
+                                --save_dir SAVEDIR \
+                                [--cfg CLASSIFIER_FREE_GUIDANCE] \
+                                [--seed SEED] \
+                                [--bspp BATCH_SIZE_PER_PROCESS] \
+                                [--sampling_steps SAMPLING_STEPS] \
+                                [--topk TOPK] \
+                                [--temp TEMP] \
+                                [--base_choice_temp BASE_CHOICE_TEMP]
+```
+
+- `--cfg`: classifier free guidance. Default: 1.0.
+
 <br/>
 
 
 
-## 🖋️ References
+### Evaluation
+
+We use [OpenAI's ADM Evaluations](https://github.com/openai/guided-diffusion/tree/main/evaluations) to evaluate the image quality.
+Please follow their instructions.
+
+You may need to make a `.npz` file from the samples for evaluation:
+
+```shell
+python make_npz.py --sample_dir SAMPLE_DIR
+```
+
+The script will recursively search for all the images in `SAMPLE_DIR` and save them in `SAMPLE_DIR.npz`.
+
+<br/>
+
+
+
+### Results
+
+**Quantitative results on class-conditional ImageNet (256x256)**:
+
+| EMA Model | Sampling Steps | CFG | FID ↓ |  IS ↑  | Precision ↑ | Recall ↑ |
+|:---------:|:--------------:|:---:|:-----:|:------:|:-----------:|:--------:|
+|    Yes    |       8        | 1.0 | 8.92  | 124.76 |    0.86     |   0.42   |
+|    Yes    |       12       | 1.0 | 8.79  | 127.73 |    0.86     |   0.42   |
+|    Yes    |       16       | 1.0 | 8.93  | 128.83 |    0.85     |   0.43   |
+
+**Non-cherry-picked samples of class-conditional ImageNet (256x256)**:
+
+<table>
+<tr>
+    <td align="center">8 steps, cfg=1.0</td>
+    <td align="center">12 steps, cfg=1.0</td>
+    <td align="center">16 steps, cfg=1.0</td>
+</tr>
+<tr>
+    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-choice4_5-cfg1.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-12steps-topall-temp1-choice4_5-cfg1.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-16steps-topall-temp1-choice4_5-cfg1.png" alt="" /></td>
+</tr>
+</table>
+
+<br/>
+
+
+
+## References
 
 MaskGIT:
 

@@ -5,6 +5,7 @@ data:
   root: ~/data/ImageNet/ILSVRC2012/Images
   img_size: 256
   crop: center
+  n_classes: 1000
 
 dataloader:
   num_workers: 4
