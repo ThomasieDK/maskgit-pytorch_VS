@@ -2,9 +2,6 @@
 
 Unofficial PyTorch implementation of [MaskGIT](http://arxiv.org/abs/2202.04200). The official Jax implementation can be found [here](https://github.com/google-research/maskgit).
 
-> This repo mainly focuses on the second stage of MaskGIT, i.e., Masked Visual Token Modeling (MVTM) with a bidirectional Transformer.
-> For the first stage (image tokenization), we directly use the pretrained VQGANs from the community.
-
 <br/>
 
 
@@ -39,6 +36,10 @@ pip install -r requirements.txt
 
 
 ## Stage-1 (VQGAN)
+
+Instead of training a VQGAN from scratch, we directly use the pretrained VQGANs from the community as the image tokenizer.
+
+
 
 ### Download
 
@@ -205,7 +206,7 @@ accelerate-launch sample.py -c CONFIG \
 - `--save_dir`: the directory to save the generated samples.
 - `--seed`: random seed. Default: 8888.
 - `--bspp`: batch size per process. Default: 100.
-- `--sampling_steps`: number of sampling steps. Default: 12.
+- `--sampling_steps`: number of sampling steps. Default: 8.
 - `--topk`: only select from the top-k tokens in each sampling step. Default: None.
 - `--temp`: softmax temperature. Default: 1.0.
 - `--base_choice_temp`: temperature for gumbel noise. Default: 4.5.
@@ -217,7 +218,8 @@ accelerate-launch sample_c2i.py -c CONFIG \
                                 --weights WEIGHTS \
                                 --n_samples N_SAMPLES \
                                 --save_dir SAVEDIR \
-                                [--cfg CLASSIFIER_FREE_GUIDANCE] \
+                                [--cfg CFG] \
+                                [--cfg_schedule CFG_SCHEDULE] \
                                 [--seed SEED] \
                                 [--bspp BATCH_SIZE_PER_PROCESS] \
                                 [--sampling_steps SAMPLING_STEPS] \
@@ -227,6 +229,7 @@ accelerate-launch sample_c2i.py -c CONFIG \
 ```
 
 - `--cfg`: classifier free guidance. Default: 1.0.
+- `--cfg_schedule`: schedule for classifier free guidance. Options: "constant", "linear". Default: "linear".
 
 <br/>
 
@@ -249,28 +252,28 @@ The script will recursively search for all the images in `SAMPLE_DIR` and save t
 
 
 
-### Results
+### Results (class-conditional ImageNet 256x256)
 
-**Quantitative results on class-conditional ImageNet (256x256)**:
+**Quantitative results**:
 
-| EMA Model | Sampling Steps | CFG | FID ↓ |  IS ↑  | Precision ↑ | Recall ↑ |
-|:---------:|:--------------:|:---:|:-----:|:------:|:-----------:|:--------:|
-|    Yes    |       8        | 1.0 | 8.92  | 124.76 |    0.86     |   0.42   |
-|    Yes    |       12       | 1.0 | 8.79  | 127.73 |    0.86     |   0.42   |
-|    Yes    |       16       | 1.0 | 8.93  | 128.83 |    0.85     |   0.43   |
+| EMA Model | Sampling Steps |     CFG     | FID ↓ |  IS ↑  | Precision ↑ | Recall ↑ |
+|:---------:|:--------------:|:-----------:|:-----:|:------:|:-----------:|:--------:|
+|    Yes    |       8        |     1.0     | 8.92  | 124.76 |    0.86     |   0.42   |
+|    Yes    |       8        | linear(2.0) | 7.15  | 186.18 |    0.91     |   0.36   |
+|    Yes    |       8        | linear(3.0) | 8.18  | 233.28 |    0.94     |   0.31   |
 
-**Non-cherry-picked samples of class-conditional ImageNet (256x256)**:
+**Uncurated samples**:
 
 <table>
 <tr>
     <td align="center">8 steps, cfg=1.0</td>
-    <td align="center">12 steps, cfg=1.0</td>
-    <td align="center">16 steps, cfg=1.0</td>
+    <td align="center">8 steps, cfg=linear(2.0)</td>
+    <td align="center">8 steps, cfg=linear(3.0)</td>
 </tr>
 <tr>
     <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-choice4_5-cfg1.png" alt="" /></td>
-    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-12steps-topall-temp1-choice4_5-cfg1.png" alt="" /></td>
-    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-16steps-topall-temp1-choice4_5-cfg1.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-choice4_5-cfglinear2.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-choice4_5-cfglinear3.png" alt="" /></td>
 </tr>
 </table>
 

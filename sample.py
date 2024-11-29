@@ -21,7 +21,7 @@ def get_parser():
     parser.add_argument('--n_samples', type=int, required=True, help='Number of samples')
     parser.add_argument('--save_dir', type=str, required=True, help='Path to directory saving samples')
     parser.add_argument('--bspp', type=int, default=100, help='Batch size on each process')
-    parser.add_argument('--sampling_steps', type=int, default=12, help='Number of sampling steps')
+    parser.add_argument('--sampling_steps', type=int, default=8, help='Number of sampling steps')
     parser.add_argument('--topk', type=int, default=None, help='Top-k sampling')
     parser.add_argument('--temp', type=float, default=1.0, help='Softmax temperature for sampling')
     parser.add_argument('--base_choice_temp', type=float, default=4.5, help='Base choice temperature for sampling')

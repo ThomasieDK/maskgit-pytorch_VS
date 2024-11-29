@@ -21,8 +21,9 @@ def get_parser():
     parser.add_argument('--n_samples', type=int, required=True, help='Number of samples')
     parser.add_argument('--save_dir', type=str, required=True, help='Path to directory saving samples')
     parser.add_argument('--cfg', type=float, default=1.0, help='Scale of classifier-free guidance')
+    parser.add_argument('--cfg_schedule', type=str, default='linear', help='Schedule of classifier-free guidance')
     parser.add_argument('--bspp', type=int, default=100, help='Batch size on each process')
-    parser.add_argument('--sampling_steps', type=int, default=12, help='Number of sampling steps')
+    parser.add_argument('--sampling_steps', type=int, default=8, help='Number of sampling steps')
     parser.add_argument('--topk', type=int, default=None, help='Top-k sampling')
     parser.add_argument('--temp', type=float, default=1.0, help='Softmax temperature for sampling')
     parser.add_argument('--base_choice_temp', type=float, default=4.5, help='Base choice temperature for sampling')
@@ -86,7 +87,7 @@ def main():
                 bspp = min(args.bspp, math.ceil(bs / accelerator.num_processes))
                 y = torch.full((bspp, ), c, device=device, dtype=torch.long)
                 *_, idx = model.sample_loop(
-                    B=bspp, L=fm_size ** 2, T=args.sampling_steps, y=y, cfg=args.cfg,
+                    B=bspp, L=fm_size ** 2, T=args.sampling_steps, y=y, cfg=args.cfg, cfg_schedule=args.cfg_schedule,
                     topk=args.topk, temp=args.temp, base_choice_temp=args.base_choice_temp,
                 )
                 samples = vqmodel.decode_indices(idx, shape=(bspp, fm_size, fm_size, -1)).clamp(-1, 1)
