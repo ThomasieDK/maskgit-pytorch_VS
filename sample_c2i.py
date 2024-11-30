@@ -75,7 +75,7 @@ def main():
     # START SAMPLING
     logger.info('Start sampling...')
     logger.info(f'Samples will be saved to {args.save_dir}')
-    fm_size = conf.data.img_size // 16  # TODO: downsample factor is hardcoded
+    fm_size = conf.data.img_size // vqmodel.downsample_factor
     assert args.n_samples % conf.data.n_classes == 0
     n_samples_per_class = args.n_samples // conf.data.n_classes
     for c in range(conf.data.n_classes):

@@ -75,7 +75,7 @@ def main():
     logger.info(f'Samples will be saved to {args.save_dir}')
     os.makedirs(args.save_dir, exist_ok=True)
     cnt = 0
-    fm_size = conf.data.img_size // 16  # TODO: downsample factor is hardcoded
+    fm_size = conf.data.img_size // vqmodel.downsample_factor
     with torch.no_grad():
         bslist = amortize(args.n_samples, args.bspp * accelerator.num_processes)
         for bs in tqdm.tqdm(bslist, desc='Sampling', disable=not accelerator.is_main_process):

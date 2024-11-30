@@ -95,6 +95,10 @@ class TamingVQModelWrapper(nn.Module):
         super().__init__()
         self.vqmodel = vqmodel
 
+    @property
+    def downsample_factor(self):
+        return 2 ** (self.vqmodel.encoder.num_resolutions - 1)
+
     def forward(self, x: Tensor):
         recx = self.vqmodel(x)[0]
         return recx
@@ -119,6 +123,10 @@ class MaskGITVQModelWrapper(nn.Module):
         super().__init__()
         self.vqmodel = vqmodel
 
+    @property
+    def downsample_factor(self):
+        return 2 ** (len(self.vqmodel.encoder.config.channel_mult) - 1)
+
     def forward(self, x: Tensor):
         enc = self.encode(x)
         rec = self.decode(enc['quant'])
@@ -142,6 +150,10 @@ class LlamaGenVQModelWrapper(nn.Module):
     def __init__(self, vqmodel: LlamaGenVQModel):
         super().__init__()
         self.vqmodel = vqmodel
+
+    @property
+    def downsample_factor(self):
+        return 2 ** (len(self.vqmodel.config.encoder_ch_mult) - 1)
 
     def forward(self, x: Tensor):
         recx = self.vqmodel(x)[0]
@@ -168,6 +180,10 @@ class aMUSEdVQModelWrapper(nn.Module):
     def __init__(self, vqmodel: aMUSEdVQModel):
         super().__init__()
         self.vqmodel = vqmodel
+
+    @property
+    def downsample_factor(self):
+        return 2 ** (len(self.vqmodel.config['block_out_channels']) - 1)
 
     def forward(self, x: Union[Tensor, FloatTensor]):
         recx = self.vqmodel(x).sample

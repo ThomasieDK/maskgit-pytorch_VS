@@ -163,7 +163,7 @@ def main():
         else:
             x = batch[0].float()
             y = batch[1].long()
-            B, N = x.shape[0], conf.data.img_size // 16  # TODO: downsample factor is hardcoded
+            B, N = x.shape[0], conf.data.img_size // vqmodel.downsample_factor
             L = N * N
             # vqmodel encode
             with torch.no_grad():
@@ -197,7 +197,7 @@ def main():
     @torch.no_grad()
     def sample(savepath):
         nrow = conf.train.n_samples_per_class
-        fm_size = conf.data.img_size // 16  # TODO: downsample factor is hardcoded
+        fm_size = conf.data.img_size // vqmodel.downsample_factor
         samples_list = []
         for c in conf.train.sample_class_ids:
             n_samples = math.ceil(conf.train.n_samples_per_class / accelerator.num_processes)

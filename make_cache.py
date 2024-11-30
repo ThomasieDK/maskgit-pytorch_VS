@@ -80,7 +80,7 @@ def main():
             else:
                 x, y = batch, None
             B = x.shape[0]
-            N = conf.data.img_size // 16  # TODO: downsample factor is hardcoded
+            N = conf.data.img_size // unwrapped_vqmodel.downsample_factor
 
             # encode image
             enc = unwrapped_vqmodel.encode(x)

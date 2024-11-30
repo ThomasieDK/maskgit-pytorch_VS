@@ -161,7 +161,7 @@ def main():
             B, L = idx.shape
         else:
             x = discard_label(batch).float()
-            B, N = x.shape[0], conf.data.img_size // 16  # TODO: downsample factor is hardcoded
+            B, N = x.shape[0], conf.data.img_size // vqmodel.downsample_factor
             L = N * N
             # vqmodel encode
             with torch.no_grad():
@@ -195,7 +195,7 @@ def main():
     def sample(savepath):
         nrow = math.ceil(math.sqrt(conf.train.n_samples))
         n_samples = conf.train.n_samples // accelerator.num_processes
-        fm_size = conf.data.img_size // 16  # TODO: downsample factor is hardcoded
+        fm_size = conf.data.img_size // vqmodel.downsample_factor
         with ema.scope(model.parameters()):
             *_, idx = unwrapped_model.sample_loop(B=n_samples, L=fm_size ** 2, T=8)
         samples = vqmodel.decode_indices(idx, shape=(n_samples, fm_size, fm_size, -1)).clamp(-1, 1)
