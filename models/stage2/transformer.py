@@ -151,6 +151,20 @@ class MaskTransformer(nn.Module):
         mask.scatter_(dim=1, index=index, src=torch.ones_like(mask, dtype=torch.bool))
         return mask
 
+    @staticmethod
+    def _get_current_cfg(cfg: float, cfg_schedule: str, n: int, L: int, t: int, T: int):
+        if cfg_schedule == 'constant':
+            cfg_t = cfg
+        elif cfg_schedule == 'linear':
+            cfg_t = 1 + (cfg - 1) * (L - n) / L
+        elif cfg_schedule.startswith('power-cosine-'):
+            power = float(cfg_schedule[13:])
+            coef = (1 - np.cos(np.pi * ((t / T) ** power))) / 2
+            cfg_t = 1 + (cfg - 1) * coef
+        else:
+            raise ValueError(f'Unknown cfg_schedule: {cfg_schedule}')
+        return cfg_t
+
     @torch.no_grad()
     def sample_one_step(
             self, n: int, idx: Tensor, y: Tensor = None, cfg: float = 1.0,
@@ -188,15 +202,12 @@ class MaskTransformer(nn.Module):
             temp: float = 1.0, topk: int = None, base_choice_temp: float = 4.5,
     ):
         assert T <= L, f'The number of steps T should <= the sequence length L, but got T={T} and L={L}'
-        assert cfg_schedule in ['constant', 'linear']
         device = self.pos_emb.device
         idx = torch.full((B, L), self.mask_token_id, dtype=torch.long, device=device)
         for t in range(T):
             # after this iteration, n positions remain masked
             n = math.floor(self.gamma((t + 1) / T) * L)
             choice_temp = base_choice_temp * (1 - (t + 1) / T)
-            cfg_t = cfg
-            if cfg_schedule == 'linear':
-                cfg_t = 1 + (cfg - 1) * (L - n) / L
+            cfg_t = self._get_current_cfg(cfg, cfg_schedule, n, L, t, T)
             idx = self.sample_one_step(n, idx, y, cfg_t, temp, topk, choice_temp)
             yield idx
