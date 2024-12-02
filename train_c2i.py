@@ -1,6 +1,7 @@
 import argparse
 import math
 import os
+from contextlib import nullcontext
 from omegaconf import OmegaConf
 
 import accelerate
@@ -80,12 +81,15 @@ def main():
 
     # BUILD DATASET AND DATALOADER
     assert conf.train.batch_size % accelerator.num_processes == 0
-    bspp = conf.train.batch_size // accelerator.num_processes
+    bspp = conf.train.batch_size // accelerator.num_processes  # batch size per process
+    micro_batch_size = conf.train.micro_batch_size or bspp  # actual batch size in each iteration
     train_set = load_data(conf.data, split='all' if conf.data.name.lower() == 'ffhq' else 'train')
     train_loader = DataLoader(train_set, batch_size=bspp, shuffle=True, drop_last=True, **conf.dataloader)
     logger.info('=' * 19 + ' Data Info ' + '=' * 20)
     logger.info(f'Size of training set: {len(train_set)}')
     logger.info(f'Batch size per process: {bspp}')
+    logger.info(f'Micro batch size: {micro_batch_size}')
+    logger.info(f'Gradient accumulation steps: {math.ceil(bspp / micro_batch_size)}')
     logger.info(f'Total batch size: {conf.train.batch_size}')
 
     # LOAD PRETRAINED VQMODEL
@@ -154,7 +158,30 @@ def main():
         # save meta information
         accelerator.save(dict(step=step), os.path.join(save_path, 'meta.pt'))
 
-    def run_step(batch):
+    def train_micro_batch(micro_batch, loss_scale, no_sync):
+        idx, y = micro_batch
+        B, L = idx.shape
+        with accelerator.no_sync(model) if no_sync else nullcontext():
+            with accelerator.autocast():
+                # transformer forward
+                mask = unwrapped_model.get_random_mask(B, L)                                # (B, L)
+                masked_idx = torch.where(mask, unwrapped_model.mask_token_id, idx)          # (B, L)
+                preds = model(masked_idx, y=y, cond_drop_prob=conf.train.cond_drop_prob)    # (B, L, C)
+                preds = preds.reshape(B * L, -1)                                            # (B * L, C)
+                mask = mask.reshape(B * L)                                                  # (B * L)
+                # cross-entropy loss
+                target = idx.reshape(-1)                                                    # (B * L)
+                target = torch.where(mask, target, -100)
+                loss = F.cross_entropy(
+                    input=preds, target=target, ignore_index=-100,
+                    label_smoothing=conf.train.label_smoothing,
+                )
+            # backward
+            loss = loss * loss_scale
+            accelerator.backward(loss)
+        return loss
+
+    def train_step(batch):
         # get data
         if isinstance(train_set, CachedFolder):
             idx = batch['idx'].long()
@@ -169,23 +196,15 @@ def main():
             with torch.no_grad():
                 idx = vqmodel.encode(x)['indices'].reshape(B, L)                        # (B, L)
 
-        with accelerator.autocast():
-            # transformer forward
-            mask = unwrapped_model.get_random_mask(B, L)                                # (B, L)
-            masked_idx = torch.where(mask, unwrapped_model.mask_token_id, idx)          # (B, L)
-            preds = model(masked_idx, y=y, cond_drop_prob=conf.train.cond_drop_prob)    # (B, L, C)
-            preds = preds.reshape(B * L, -1)                                            # (B * L, C)
-            mask = mask.reshape(B * L)                                                  # (B * L)
-            # cross-entropy loss
-            target = idx.reshape(-1)                                                    # (B * L)
-            target = torch.where(mask, target, -100)
-            loss = F.cross_entropy(
-                input=preds, target=target, ignore_index=-100,
-                label_smoothing=conf.train.label_smoothing,
-            )
-
-        # backward
-        accelerator.backward(loss)
+        # forward and backward with gradient accumulation
+        loss = torch.tensor(0., device=device)
+        for i in range(0, B, micro_batch_size):
+            idx_micro_batch = idx[i:i+micro_batch_size]
+            y_micro_batch = y[i:i+micro_batch_size]
+            loss_scale = idx_micro_batch.shape[0] / B
+            no_sync = (i + micro_batch_size) < B
+            loss_micro_batch = train_micro_batch((idx_micro_batch, y_micro_batch), loss_scale, no_sync)
+            loss = loss + loss_micro_batch
 
         # optimize
         optimizer.step()
@@ -222,7 +241,7 @@ def main():
         _batch = next(train_loader_iterator)
         # run a step
         model.train()
-        train_status = run_step(_batch)
+        train_status = train_step(_batch)
         status_tracker.track_status('Train', train_status, step)
         accelerator.wait_for_everyone()
         # validate

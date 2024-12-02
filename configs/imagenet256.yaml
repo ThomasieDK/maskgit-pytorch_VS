@@ -31,6 +31,7 @@ transformer:
 train:
   n_steps: 1500000
   batch_size: 256
+  micro_batch_size: ~
 
   label_smoothing: 0.1
   cond_drop_prob: 0.1
