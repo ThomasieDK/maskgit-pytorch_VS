@@ -1,33 +1,49 @@
 import os
-import math
 import tqdm
 import argparse
+from itertools import chain
 from omegaconf import OmegaConf
 
 import accelerate
 import torch
+from torch.utils.data import Dataset, DataLoader
+from torchvision.utils import save_image
 
 from models import make_vqmodel
 from utils.logger import get_logger
-from utils.image import image_norm_to_float, save_images
-from utils.misc import instantiate_from_config, amortize
+from utils.image import image_norm_to_float
+from utils.misc import instantiate_from_config
 
 
 def get_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--seed', type=int, default=8888, help='Set random seed')
     parser.add_argument('-c', '--config', type=str, required=True, help='Path to inference configuration file')
     parser.add_argument('--weights', type=str, required=True, help='Path to pretrained transformer weights')
     parser.add_argument('--n_samples', type=int, required=True, help='Number of samples')
     parser.add_argument('--save_dir', type=str, required=True, help='Path to directory saving samples')
     parser.add_argument('--cfg', type=float, default=1.0, help='Scale of classifier-free guidance')
     parser.add_argument('--cfg_schedule', type=str, default='linear', help='Schedule of classifier-free guidance')
+    parser.add_argument('--seed', type=int, default=8888, help='Set random seed')
     parser.add_argument('--bspp', type=int, default=100, help='Batch size on each process')
     parser.add_argument('--sampling_steps', type=int, default=8, help='Number of sampling steps')
     parser.add_argument('--topk', type=int, default=None, help='Top-k sampling')
     parser.add_argument('--temp', type=float, default=1.0, help='Softmax temperature for sampling')
     parser.add_argument('--base_choice_temp', type=float, default=4.5, help='Base choice temperature for sampling')
     return parser
+
+
+class DummyDataset(Dataset):
+    def __init__(self, n_samples: int, n_classes: int):
+        assert n_samples % n_classes == 0
+        n_samples_per_class = n_samples // n_classes
+        self.names = list(chain(*[list(range(n_samples_per_class)) for _ in range(n_classes)]))
+        self.labels = list(chain(*[[c] * n_samples_per_class for c in range(n_classes)]))
+
+    def __len__(self):
+        return len(self.names)
+
+    def __getitem__(self, index: int):
+        return self.names[index], self.labels[index]
 
 
 def main():
@@ -55,6 +71,13 @@ def main():
     logger.info(f'Mixed precision: {accelerator.mixed_precision}')
     accelerator.wait_for_everyone()
 
+    # BUILD DATASET AND DATALOADER
+    dataset = DummyDataset(n_samples=args.n_samples, n_classes=conf.data.n_classes)
+    dataloader = DataLoader(
+        dataset=dataset, batch_size=args.bspp, shuffle=False, drop_last=False,
+        num_workers=4, pin_memory=True, prefetch_factor=2,
+    )
+
     # LOAD PRETRAINED VQMODEL
     with accelerator.main_process_first():
         vqmodel = make_vqmodel(conf.vqmodel.model_name)
@@ -70,32 +93,26 @@ def main():
     logger.info(f'Successfully load transformer from {args.weights}')
     logger.info(f'Number of parameters of transformer: {sum(p.numel() for p in model.parameters()):,}')
     logger.info('=' * 50)
+
+    # PREPARE FOR DISTRIBUTED MODE
+    dataloader = accelerator.prepare(dataloader)  # type: ignore
     accelerator.wait_for_everyone()
 
     # START SAMPLING
     logger.info('Start sampling...')
     logger.info(f'Samples will be saved to {args.save_dir}')
     fm_size = conf.data.img_size // vqmodel.downsample_factor
-    assert args.n_samples % conf.data.n_classes == 0
-    n_samples_per_class = args.n_samples // conf.data.n_classes
-    for c in range(conf.data.n_classes):
-        cnt = 0
-        os.makedirs(os.path.join(args.save_dir, f'class_{c}'), exist_ok=True)
-        with torch.no_grad():
-            bslist = amortize(n_samples_per_class, args.bspp * accelerator.num_processes)
-            for bs in tqdm.tqdm(bslist, desc=f'Sampling (class {c})', disable=not accelerator.is_main_process):
-                bspp = min(args.bspp, math.ceil(bs / accelerator.num_processes))
-                y = torch.full((bspp, ), c, device=device, dtype=torch.long)
-                *_, idx = model.sample_loop(
-                    B=bspp, L=fm_size ** 2, T=args.sampling_steps, y=y, cfg=args.cfg, cfg_schedule=args.cfg_schedule,
-                    topk=args.topk, temp=args.temp, base_choice_temp=args.base_choice_temp,
-                )
-                samples = vqmodel.decode_indices(idx, shape=(bspp, fm_size, fm_size, -1)).clamp(-1, 1)
-                samples = accelerator.gather(samples)[:bs]
-                if accelerator.is_main_process:
-                    samples = image_norm_to_float(samples).cpu()
-                    save_images(samples, os.path.join(args.save_dir, f'class_{c}'), start_idx=cnt)
-                    cnt += bs
+    for name, y in tqdm.tqdm(dataloader, desc='Sampling', disable=not accelerator.is_main_process):
+        B = name.shape[0]
+        *_, idx = model.sample_loop(
+            B=B, L=fm_size ** 2, T=args.sampling_steps, y=y, cfg=args.cfg, cfg_schedule=args.cfg_schedule,
+            topk=args.topk, temp=args.temp, base_choice_temp=args.base_choice_temp,
+        )
+        samples = vqmodel.decode_indices(idx, shape=(B, fm_size, fm_size, -1)).clamp(-1, 1)
+        samples = image_norm_to_float(samples).cpu()
+        for i, c, sample in zip(name, y, samples):
+            os.makedirs(os.path.join(args.save_dir, f'class_{c.item()}'), exist_ok=True)
+            save_image(sample, os.path.join(args.save_dir, f'class_{c.item()}', f'{i}.png'))
     logger.info(f'Sampled images are saved to {args.save_dir}')
     accelerator.end_training()
     logger.info('End of sampling')
