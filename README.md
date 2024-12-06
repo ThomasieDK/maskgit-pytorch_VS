@@ -1,6 +1,6 @@
 # maskgit-pytorch
 
-Unofficial PyTorch implementation of [MaskGIT](http://arxiv.org/abs/2202.04200). The official Jax implementation can be found [here](https://github.com/google-research/maskgit).
+Unofficial PyTorch implementation of [MaskGIT: Masked Generative Image Transformer](http://arxiv.org/abs/2202.04200). The official Jax implementation can be found [here](https://github.com/google-research/maskgit).
 
 <br/>
 
@@ -229,7 +229,7 @@ accelerate-launch sample_c2i.py -c CONFIG \
 ```
 
 - `--cfg`: classifier free guidance. Default: 1.0.
-- `--cfg_schedule`: schedule for classifier free guidance. Options: "constant", "linear". Default: "linear".
+- `--cfg_schedule`: schedule for classifier free guidance. Options: "constant", "linear", "power-cosine-[num]". Default: "linear".
 
 <br/>
 
@@ -252,7 +252,10 @@ The script will recursively search for all the images in `SAMPLE_DIR` and save t
 
 
 
-### Results (class-conditional ImageNet 256x256)
+### Results
+
+Below we show the quantitative and qualitative results of class-conditional ImageNet (256x256).
+As a reference, the original MaskGIT paper reports FID=6.18 and IS=182.1 with 8 sampling steps without classifier-free guidance (CFG=1).
 
 **Quantitative results**:
 
@@ -274,6 +277,34 @@ The script will recursively search for all the images in `SAMPLE_DIR` and save t
     <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-choice4_5-cfg1.png" alt="" /></td>
     <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-choice4_5-cfglinear2.png" alt="" /></td>
     <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-choice4_5-cfglinear3.png" alt="" /></td>
+</tr>
+</table>
+
+We further improve the results by increasing the training batch size to 2048 and using the arccos mask schedule.
+See detailed differences by `diff configs/imagenet256.yaml configs/imagenet256-improved.yaml`.
+
+**Quantitative results**:
+
+| EMA Model | Sampling Steps |     CFG     | FID ↓ |  IS ↑  | Precision ↑ | Recall ↑ |
+|:---------:|:--------------:|:-----------:|:-----:|:------:|:-----------:|:--------:|
+|    Yes    |       8        |     1.0     | 7.21  | 152.98 |    0.89     |   0.42   |
+|    Yes    |       8        | linear(1.5) | 6.21  | 192.62 |    0.91     |   0.39   |
+|    Yes    |       8        | linear(2.0) | 6.09  | 226.52 |    0.92     |   0.37   |
+|    Yes    |       8        | linear(2.5) | 6.54  | 257.97 |    0.93     |   0.35   |
+|    Yes    |       8        | linear(3.0) | 7.19  | 282.99 |    0.94     |   0.32   |
+
+**Uncurated samples**:
+
+<table>
+<tr>
+    <td align="center">8 steps, cfg=1.0</td>
+    <td align="center">8 steps, cfg=linear(2.0)</td>
+    <td align="center">8 steps, cfg=linear(3.0)</td>
+</tr>
+<tr>
+    <td width="30%"><img src="./assets/stage2/imagenet256-improved-maskgit-ema-8steps-topall-temp1-choice4_5-cfg1.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-improved-maskgit-ema-8steps-topall-temp1-choice4_5-cfglinear2.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-improved-maskgit-ema-8steps-topall-temp1-choice4_5-cfglinear3.png" alt="" /></td>
 </tr>
 </table>
 
@@ -328,5 +359,28 @@ aMUSEd:
   eprint={2401.01808},
   archivePrefix={arXiv},
   primaryClass={cs.CV}
+}
+```
+
+A Pytorch Reproduction of Masked Generative Image Transformer:
+
+```
+@article{besnier2023pytorch,
+  title={A Pytorch Reproduction of Masked Generative Image Transformer},
+  author={Besnier, Victor and Chen, Mickael},
+  journal={arXiv preprint arXiv:2310.14400},
+  year={2023}
+}
+```
+
+TiTok:
+
+```
+@inproceedings{yu2024an,
+  title={An Image is Worth 32 Tokens for Reconstruction and Generation},
+  author={Qihang Yu and Mark Weber and Xueqing Deng and Xiaohui Shen and Daniel Cremers and Liang-Chieh Chen},
+  booktitle={The Thirty-eighth Annual Conference on Neural Information Processing Systems},
+  year={2024},
+  url={https://openreview.net/forum?id=tOXoQPRzPL}
 }
 ```

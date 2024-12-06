@@ -21,6 +21,7 @@ def get_parser():
     parser.add_argument('--weights', type=str, required=True, help='Path to pretrained transformer weights')
     parser.add_argument('--n_samples', type=int, required=True, help='Number of samples')
     parser.add_argument('--save_dir', type=str, required=True, help='Path to directory saving samples')
+    parser.add_argument('--n_classes', type=int, help='Number of classes. Use config value if not provided')
     parser.add_argument('--cfg', type=float, default=1.0, help='Scale of classifier-free guidance')
     parser.add_argument('--cfg_schedule', type=str, default='linear', help='Schedule of classifier-free guidance')
     parser.add_argument('--seed', type=int, default=8888, help='Set random seed')
@@ -72,7 +73,7 @@ def main():
     accelerator.wait_for_everyone()
 
     # BUILD DATASET AND DATALOADER
-    dataset = DummyDataset(n_samples=args.n_samples, n_classes=conf.data.n_classes)
+    dataset = DummyDataset(n_samples=args.n_samples, n_classes=args.n_classes or conf.data.n_classes)
     dataloader = DataLoader(
         dataset=dataset, batch_size=args.bspp, shuffle=False, drop_last=False,
         num_workers=4, pin_memory=True, prefetch_factor=2,
