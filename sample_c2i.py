@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision.utils import save_image
 
-from models import make_vqmodel
+from models import make_vqmodel, MaskGITSampler
 from utils.logger import get_logger
 from utils.image import image_norm_to_float
 from utils.misc import instantiate_from_config
@@ -28,8 +28,9 @@ def get_parser():
     parser.add_argument('--bspp', type=int, default=100, help='Batch size on each process')
     parser.add_argument('--sampling_steps', type=int, default=8, help='Number of sampling steps')
     parser.add_argument('--topk', type=int, default=None, help='Top-k sampling')
-    parser.add_argument('--temp', type=float, default=1.0, help='Softmax temperature for sampling')
-    parser.add_argument('--base_choice_temp', type=float, default=4.5, help='Base choice temperature for sampling')
+    parser.add_argument('--softmax_temp', type=float, default=1.0, help='Softmax temperature for sampling')
+    parser.add_argument('--sampling_strategy', type=str, default='confidence', help='Sampling strategy')
+    parser.add_argument('--base_gumbel_temp', type=float, default=4.5, help='Base gumbel temperature for sampling')
     return parser
 
 
@@ -95,6 +96,14 @@ def main():
     logger.info(f'Number of parameters of transformer: {sum(p.numel() for p in model.parameters()):,}')
     logger.info('=' * 50)
 
+    # BUILD SAMPLER
+    fm_size = conf.data.img_size // vqmodel.downsample_factor
+    sampler = MaskGITSampler(
+        model=model, sequence_length=fm_size ** 2, sampling_steps=args.sampling_steps,
+        softmax_temp=args.softmax_temp, topk=args.topk, cfg=args.cfg, cfg_schedule=args.cfg_schedule,
+        sampling_strategy=args.sampling_strategy, base_gumbel_temp=args.base_gumbel_temp,
+    )
+
     # PREPARE FOR DISTRIBUTED MODE
     dataloader = accelerator.prepare(dataloader)  # type: ignore
     accelerator.wait_for_everyone()
@@ -102,13 +111,9 @@ def main():
     # START SAMPLING
     logger.info('Start sampling...')
     logger.info(f'Samples will be saved to {args.save_dir}')
-    fm_size = conf.data.img_size // vqmodel.downsample_factor
     for name, y in tqdm.tqdm(dataloader, desc='Sampling', disable=not accelerator.is_main_process):
         B = name.shape[0]
-        *_, idx = model.sample_loop(
-            B=B, L=fm_size ** 2, T=args.sampling_steps, y=y, cfg=args.cfg, cfg_schedule=args.cfg_schedule,
-            topk=args.topk, temp=args.temp, base_choice_temp=args.base_choice_temp,
-        )
+        idx = sampler.sample(n_samples=B, y=y)
         samples = vqmodel.decode_indices(idx, shape=(B, fm_size, fm_size, -1)).clamp(-1, 1)
         samples = image_norm_to_float(samples).cpu()
         for i, c, sample in zip(name, y, samples):

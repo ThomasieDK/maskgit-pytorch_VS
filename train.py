@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
 from datasets import CachedFolder
-from models import make_vqmodel, EMA
+from models import make_vqmodel, EMA, MaskGITSampler
 from utils.data import load_data
 from utils.logger import get_logger
 from utils.misc import create_exp_dir, find_resume_checkpoint, instantiate_from_config
@@ -108,6 +108,10 @@ def main():
     logger.info(f'Number of parameters of transformer: {sum(p.numel() for p in model.parameters()):,}')
     logger.info('=' * 50)
 
+    # BUILD SAMPLER
+    fm_size = conf.data.img_size // vqmodel.downsample_factor  # feature map size
+    sampler = MaskGITSampler(model, sequence_length=fm_size ** 2, sampling_steps=8, device=device)
+
     # RESUME TRAINING
     step = 0
     if args.resume is not None:
@@ -191,7 +195,7 @@ def main():
             L = N * N
             # vqmodel encode
             with torch.no_grad():
-                idx = vqmodel.encode(x)['indices'].reshape(B, L)                # (B, L)
+                idx = vqmodel.encode(x)['indices'].reshape(B, L)
 
         # forward and backward with gradient accumulation
         loss = torch.tensor(0., device=device)
@@ -211,14 +215,13 @@ def main():
 
     @torch.no_grad()
     def sample(savepath):
-        nrow = math.ceil(math.sqrt(conf.train.n_samples))
         n_samples = conf.train.n_samples // accelerator.num_processes
-        fm_size = conf.data.img_size // vqmodel.downsample_factor
         with ema.scope(model.parameters()):
-            *_, idx = unwrapped_model.sample_loop(B=n_samples, L=fm_size ** 2, T=8)
+            idx = sampler.sample(n_samples=n_samples)
         samples = vqmodel.decode_indices(idx, shape=(n_samples, fm_size, fm_size, -1)).clamp(-1, 1)
         samples = accelerator.gather(samples).cpu()
         if accelerator.is_main_process:
+            nrow = math.ceil(math.sqrt(conf.train.n_samples))
             save_image(samples, savepath, nrow=nrow, normalize=True, value_range=(-1, 1))
 
     # START TRAINING

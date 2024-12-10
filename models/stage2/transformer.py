@@ -104,9 +104,6 @@ class MaskTransformer(nn.Module):
         self.apply(self._init_weights)
         nn.init.trunc_normal_(self.pos_emb, std=0.02)
 
-        # helper distribution for sampling
-        self.gumbel = torch.distributions.Gumbel(0, 1)
-
     @staticmethod
     def _init_weights(module):
         if isinstance(module, nn.Linear):
@@ -150,64 +147,3 @@ class MaskTransformer(nn.Module):
         mask = torch.zeros((B, L), dtype=torch.bool, device=device)
         mask.scatter_(dim=1, index=index, src=torch.ones_like(mask, dtype=torch.bool))
         return mask
-
-    @staticmethod
-    def _get_current_cfg(cfg: float, cfg_schedule: str, n: int, L: int, t: int, T: int):
-        if cfg_schedule == 'constant':
-            cfg_t = cfg
-        elif cfg_schedule == 'linear':
-            cfg_t = 1 + (cfg - 1) * (L - n) / L
-        elif cfg_schedule.startswith('power-cosine-'):
-            power = float(cfg_schedule[13:])
-            coef = (1 - np.cos(np.pi * ((t / T) ** power))) / 2
-            cfg_t = 1 + (cfg - 1) * coef
-        else:
-            raise ValueError(f'Unknown cfg_schedule: {cfg_schedule}')
-        return cfg_t
-
-    @torch.no_grad()
-    def sample_one_step(
-            self, n: int, idx: Tensor, y: Tensor = None, cfg: float = 1.0,
-            temp: float = 1.0, topk: int = None, choice_temp: float = 0.0,
-    ):
-        """ idx (B, L), y (B, 1) -> sampled_idx (B, L) """
-        B, L = idx.shape
-        mask = torch.eq(idx, self.mask_token_id)
-        # get probabilities
-        logits = self(idx, y) / temp
-        if y is not None and cfg != 1.0:
-            logits_uncond = self(idx, y, cond_drop_prob=1.0) / temp
-            logits = cfg * logits + (1 - cfg) * logits_uncond
-        if topk is not None:
-            v, _ = torch.topk(logits, min(topk, L), largest=True, sorted=True)
-            logits[logits < v[..., [-1]]] = float('-inf')
-        probs = torch.softmax(logits, dim=-1)
-        # sample all positions
-        sampled_idx = torch.multinomial(probs.reshape(B * L, -1), num_samples=1).reshape(B, L)
-        sampled_probs = torch.gather(probs, dim=-1, index=sampled_idx[:, :, None]).reshape(B, L)
-        # restore unmasked positions
-        sampled_idx = torch.where(mask, sampled_idx, idx)
-        sampled_probs = torch.where(mask, sampled_probs, torch.full_like(sampled_probs, torch.inf))
-        # unmask top L-n positions (with gumbel noise added for randomness)
-        randomness = self.gumbel.sample(sampled_probs.shape).to(sampled_probs.device)
-        confidence = torch.log(sampled_probs) + choice_temp * randomness
-        index = confidence.topk(L - n, dim=1).indices
-        mask = mask.scatter(dim=1, index=index, src=torch.zeros_like(mask, dtype=torch.bool))
-        sampled_idx = torch.where(mask, self.mask_token_id, sampled_idx)
-        return sampled_idx
-
-    @torch.no_grad()
-    def sample_loop(
-            self, B: int, L: int, T: int, y: Tensor = None, cfg: float = 1.0, cfg_schedule: str = 'linear',
-            temp: float = 1.0, topk: int = None, base_choice_temp: float = 4.5,
-    ):
-        assert T <= L, f'The number of steps T should <= the sequence length L, but got T={T} and L={L}'
-        device = self.pos_emb.device
-        idx = torch.full((B, L), self.mask_token_id, dtype=torch.long, device=device)
-        for t in range(T):
-            # after this iteration, n positions remain masked
-            n = math.floor(self.gamma((t + 1) / T) * L)
-            choice_temp = base_choice_temp * (1 - (t + 1) / T)
-            cfg_t = self._get_current_cfg(cfg, cfg_schedule, n, L, t, T)
-            idx = self.sample_one_step(n, idx, y, cfg_t, temp, topk, choice_temp)
-            yield idx
