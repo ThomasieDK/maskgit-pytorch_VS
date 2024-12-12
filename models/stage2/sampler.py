@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch import Tensor
 
 
-class MaskGITSampler:
+class BaseSampler:
     def __init__(
             self,
             model: nn.Module,
@@ -16,30 +16,18 @@ class MaskGITSampler:
             topk: int = None,
             cfg: float = 1.0,
             cfg_schedule: str = 'linear',
-            sampling_strategy: str = 'confidence',
-            base_gumbel_temp: float = 4.5,
             device: torch.device = None,
     ):
         assert sampling_steps <= sequence_length
-        assert sampling_strategy in ['random', 'confidence']
         assert cfg_schedule in ['constant', 'linear'] or cfg_schedule.startswith('power-cosine-')
-
         self.model = model
         self.mask_token_id = self.model.mask_token_id
-
         self.sequence_length = sequence_length
         self.sampling_steps = sampling_steps
-
         self.softmax_temp = softmax_temp
         self.topk = topk
-
         self.cfg = cfg
         self.cfg_schedule = cfg_schedule
-
-        self.sampling_strategy = sampling_strategy
-        self.base_gumbel_temp = base_gumbel_temp
-        self.gumbel = torch.distributions.Gumbel(0, 1)
-
         self.device = device or next(model.parameters()).device
 
     def get_current_cfg(self, n: int, L: int, t: int, T: int):
@@ -56,10 +44,8 @@ class MaskGITSampler:
         return cfg_current
 
     @torch.no_grad()
-    def sample_one_step_random(self, idx: Tensor, n: int, y: Tensor = None, cfg: float = 1.0):
-        B, L = idx.shape
-        mask = torch.eq(idx, self.mask_token_id)
-        # get probabilities
+    def get_model_prediction(self, idx: Tensor, y: Tensor = None, cfg: float = 1.0):
+        L = idx.shape[1]
         logits = self.model(idx, y)
         if y is not None and cfg != 1.0:
             logits_uncond = self.model(idx, y, cond_drop_prob=1.0)
@@ -68,31 +54,20 @@ class MaskGITSampler:
             v, _ = torch.topk(logits, min(self.topk, L), largest=True, sorted=True)
             logits[logits < v[..., [-1]]] = float('-inf')
         probs = torch.softmax(logits / self.softmax_temp, dim=-1)
-        # sample all positions
-        sampled_idx = torch.multinomial(probs.reshape(B * L, -1), num_samples=1).reshape(B, L)
-        # restore unmasked positions
-        sampled_idx = torch.where(mask, sampled_idx, idx)
-        # preserve L-n positions (randomly selected)
-        confidence = torch.rand_like(idx, dtype=torch.float)  # random confidence
-        confidence = torch.where(mask, confidence, torch.full_like(confidence, torch.inf))
-        index = confidence.topk(L - n, dim=1).indices
-        mask = mask.scatter(dim=1, index=index, src=torch.zeros_like(mask, dtype=torch.bool))
-        sampled_idx = torch.where(mask, self.mask_token_id, sampled_idx)
-        return sampled_idx, mask
+        return probs
 
-    @torch.no_grad()
-    def sample_one_step_confidence(self, idx: Tensor, n: int, y: Tensor = None, cfg: float = 1.0, gumbel_temp: float = 0.0):
+
+class MaskGITSampler(BaseSampler):
+    def __init__(self, base_gumbel_temp: float = 4.5, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.base_gumbel_temp = base_gumbel_temp
+        self.gumbel = torch.distributions.Gumbel(0, 1)
+
+    def sample_one_step(self, idx: Tensor, n: int, y: Tensor = None, cfg: float = 1.0, gumbel_temp: float = 0.0):
         B, L = idx.shape
         mask = torch.eq(idx, self.mask_token_id)
         # get probabilities
-        logits = self.model(idx, y)
-        if y is not None and cfg != 1.0:
-            logits_uncond = self.model(idx, y, cond_drop_prob=1.0)
-            logits = cfg * logits + (1 - cfg) * logits_uncond
-        if self.topk is not None:
-            v, _ = torch.topk(logits, min(self.topk, L), largest=True, sorted=True)
-            logits[logits < v[..., [-1]]] = float('-inf')
-        probs = torch.softmax(logits / self.softmax_temp, dim=-1)
+        probs = self.get_model_prediction(idx, y, cfg)
         # sample all positions
         sampled_idx = torch.multinomial(probs.reshape(B * L, -1), num_samples=1).reshape(B, L)
         sampled_probs = torch.gather(probs, dim=-1, index=sampled_idx[:, :, None]).reshape(B, L)
@@ -115,13 +90,42 @@ class MaskGITSampler:
             n = math.floor(self.model.gamma((t + 1) / T) * L)
             n = min(n, L - 1 - t)
             cfg_current = self.get_current_cfg(n, L, t, T)
-            if self.sampling_strategy == 'random':
-                idx, mask = self.sample_one_step_random(idx, n, y, cfg_current)
-            elif self.sampling_strategy == 'confidence':
-                gumbel_temp = self.base_gumbel_temp * (1 - (t + 1) / T)
-                idx, mask = self.sample_one_step_confidence(idx, n, y, cfg_current, gumbel_temp)
-            else:
-                raise ValueError(f'Unknown sampling_strategy: {self.sampling_strategy}')
+            gumbel_temp = self.base_gumbel_temp * (1 - (t + 1) / T)
+            idx, mask = self.sample_one_step(idx, n, y, cfg_current, gumbel_temp)
+            yield idx, mask
+
+    def sample(self, n_samples: int, y: Tensor = None):
+        *_, (idx, mask) = self.sample_loop(n_samples, y)
+        return idx
+
+
+class RandomSampler(BaseSampler):
+    def sample_one_step(self, idx: Tensor, n: int, y: Tensor = None, cfg: float = 1.0):
+        B, L = idx.shape
+        mask = torch.eq(idx, self.mask_token_id)
+        # get probabilities
+        probs = self.get_model_prediction(idx, y, cfg)
+        # sample all positions
+        sampled_idx = torch.multinomial(probs.reshape(B * L, -1), num_samples=1).reshape(B, L)
+        # restore unmasked positions
+        sampled_idx = torch.where(mask, sampled_idx, idx)
+        # preserve L-n positions (randomly selected)
+        confidence = torch.rand_like(idx, dtype=torch.float)  # random confidence
+        confidence = torch.where(mask, confidence, torch.full_like(confidence, torch.inf))
+        index = confidence.topk(L - n, dim=1).indices
+        mask = mask.scatter(dim=1, index=index, src=torch.zeros_like(mask, dtype=torch.bool))
+        sampled_idx = torch.where(mask, self.mask_token_id, sampled_idx)
+        return sampled_idx, mask
+
+    def sample_loop(self, n_samples: int, y: Tensor = None):
+        B, L, T = n_samples, self.sequence_length, self.sampling_steps
+        idx = torch.full((B, L), self.mask_token_id, dtype=torch.long, device=self.device)
+        for t in range(T):
+            # after this iteration, n positions remain masked
+            n = math.floor(self.model.gamma((t + 1) / T) * L)
+            n = min(n, L - 1 - t)
+            cfg_current = self.get_current_cfg(n, L, t, T)
+            idx, mask = self.sample_one_step(idx, n, y, cfg_current)
             yield idx, mask
 
     def sample(self, n_samples: int, y: Tensor = None):

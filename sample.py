@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision.utils import save_image
 
-from models import make_vqmodel, MaskGITSampler
+from models import make_vqmodel, MaskGITSampler, RandomSampler
 from utils.logger import get_logger
 from utils.image import image_norm_to_float
 from utils.misc import instantiate_from_config
@@ -25,7 +25,7 @@ def get_parser():
     parser.add_argument('--sampling_steps', type=int, default=8, help='Number of sampling steps')
     parser.add_argument('--topk', type=int, default=None, help='Top-k sampling')
     parser.add_argument('--softmax_temp', type=float, default=1.0, help='Softmax temperature for sampling')
-    parser.add_argument('--sampling_strategy', type=str, default='confidence', help='Sampling strategy')
+    parser.add_argument('--sampling_strategy', type=str, default='maskgit', help='Sampling strategy')
     parser.add_argument('--base_gumbel_temp', type=float, default=4.5, help='Base gumbel temperature for sampling')
     return parser
 
@@ -92,11 +92,16 @@ def main():
 
     # BUILD SAMPLER
     fm_size = conf.data.img_size // vqmodel.downsample_factor
-    sampler = MaskGITSampler(
+    common_kwargs = dict(
         model=model, sequence_length=fm_size ** 2, sampling_steps=args.sampling_steps,
         softmax_temp=args.softmax_temp, topk=args.topk,
-        sampling_strategy=args.sampling_strategy, base_gumbel_temp=args.base_gumbel_temp,
     )
+    if args.sampling_strategy == 'maskgit':
+        sampler = MaskGITSampler(**common_kwargs, base_gumbel_temp=args.base_gumbel_temp)
+    elif args.sampling_strategy == 'random':
+        sampler = RandomSampler(**common_kwargs)
+    else:
+        raise ValueError(f'Unknown sampling strategy: {args.sampling_strategy}')
 
     # PREPARE FOR DISTRIBUTED MODE
     dataloader = accelerator.prepare(dataloader)  # type: ignore

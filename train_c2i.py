@@ -110,7 +110,7 @@ def main():
 
     # BUILD SAMPLER
     fm_size = conf.data.img_size // vqmodel.downsample_factor  # feature map size
-    sampler = MaskGITSampler(model, sequence_length=fm_size ** 2, sampling_steps=8, device=device)
+    sampler = MaskGITSampler(model=model, sequence_length=fm_size ** 2, sampling_steps=8, device=device)
 
     # RESUME TRAINING
     step = 0
