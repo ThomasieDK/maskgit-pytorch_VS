@@ -161,8 +161,7 @@ To train an **unconditional** model (e.g. FFHQ), run the following command:
 # if not using cached latents
 accelerate-launch train.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION]
 # if using cached latents
-accelerate-launch train.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION] \
-                           --data.name cached --data.root CACHEDIR
+accelerate-launch train.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION] --data.name cached --data.root CACHEDIR
 ```
 
 To train a **class-conditional** model (e.g. ImageNet), run the following command:
@@ -171,8 +170,7 @@ To train a **class-conditional** model (e.g. ImageNet), run the following comman
 # if not using cached latents
 accelerate-launch train_c2i.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION]
 # if using cached latents
-accelerate-launch train_c2i.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION] \
-                               --data.name cached --data.root CACHEDIR
+accelerate-launch train_c2i.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION] --data.name cached --data.root CACHEDIR
 ```
 
 - `-c`: path to the config file, e.g., `./configs/imagenet256.yaml`.
@@ -196,8 +194,8 @@ accelerate-launch sample.py -c CONFIG \
                             [--bspp BATCH_SIZE_PER_PROCESS] \
                             [--sampling_steps SAMPLING_STEPS] \
                             [--topk TOPK] \
-                            [--temp TEMP] \
-                            [--base_choice_temp BASE_CHOICE_TEMP]
+                            [--softmax_temp SOFTMAX_TEMP] \
+                            [--base_gumbel_temp BASE_GUMBEL_TEMP]
 ```
 
 - `-c`: path to the config file, e.g., `./configs/ffhq256.yaml`.
@@ -208,8 +206,8 @@ accelerate-launch sample.py -c CONFIG \
 - `--bspp`: batch size per process. Default: 100.
 - `--sampling_steps`: number of sampling steps. Default: 8.
 - `--topk`: only select from the top-k tokens in each sampling step. Default: None.
-- `--temp`: softmax temperature. Default: 1.0.
-- `--base_choice_temp`: temperature for gumbel noise. Default: 4.5.
+- `--softmax_temp`: softmax temperature. Default: 1.0.
+- `--base_gumbel_temp`: temperature for gumbel noise. Default: 4.5.
 
 To sample from the trained **class-conditional** model (e.g., ImageNet), run the following command:
 
@@ -224,8 +222,8 @@ accelerate-launch sample_c2i.py -c CONFIG \
                                 [--bspp BATCH_SIZE_PER_PROCESS] \
                                 [--sampling_steps SAMPLING_STEPS] \
                                 [--topk TOPK] \
-                                [--temp TEMP] \
-                                [--base_choice_temp BASE_CHOICE_TEMP]
+                                [--softmax_temp SOFTMAX_TEMP] \
+                                [--base_gumbel_temp BASE_GUMBEL_TEMP]
 ```
 
 - `--cfg`: classifier free guidance. Default: 1.0.
@@ -252,7 +250,7 @@ The script will recursively search for all the images in `SAMPLE_DIR` and save t
 
 
 
-### Results
+### Results (class-conditional ImageNet 256x256)
 
 Below we show the quantitative and qualitative results of class-conditional ImageNet (256x256).
 As a reference, the original MaskGIT paper reports FID=6.18 and IS=182.1 with 8 sampling steps without classifier-free guidance (CFG=1).
@@ -274,9 +272,9 @@ As a reference, the original MaskGIT paper reports FID=6.18 and IS=182.1 with 8 
     <td align="center">8 steps, cfg=linear(3.0)</td>
 </tr>
 <tr>
-    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-choice4_5-cfg1.png" alt="" /></td>
-    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-choice4_5-cfglinear2.png" alt="" /></td>
-    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-choice4_5-cfglinear3.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-gumbel4_5-cfg1.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-gumbel4_5-cfglinear2.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-gumbel4_5-cfglinear3.png" alt="" /></td>
 </tr>
 </table>
 
@@ -302,9 +300,9 @@ See detailed differences by `diff configs/imagenet256.yaml configs/imagenet256-i
     <td align="center">8 steps, cfg=linear(3.0)</td>
 </tr>
 <tr>
-    <td width="30%"><img src="./assets/stage2/imagenet256-improved-maskgit-ema-8steps-topall-temp1-choice4_5-cfg1.png" alt="" /></td>
-    <td width="30%"><img src="./assets/stage2/imagenet256-improved-maskgit-ema-8steps-topall-temp1-choice4_5-cfglinear2.png" alt="" /></td>
-    <td width="30%"><img src="./assets/stage2/imagenet256-improved-maskgit-ema-8steps-topall-temp1-choice4_5-cfglinear3.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-improved-maskgit-ema-8steps-topall-temp1-gumbel4_5-cfg1.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-improved-maskgit-ema-8steps-topall-temp1-gumbel4_5-cfglinear2.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-improved-maskgit-ema-8steps-topall-temp1-gumbel4_5-cfglinear3.png" alt="" /></td>
 </tr>
 </table>
 
