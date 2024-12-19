@@ -1,6 +1,9 @@
 import os
 import tqdm
+import random
 import argparse
+import numpy as np
+from PIL import Image
 from omegaconf import OmegaConf
 
 import accelerate
@@ -119,6 +122,36 @@ def main():
         for i, sample in zip(name, samples):
             save_image(sample, os.path.join(args.save_dir, f'{i}.png'))
     logger.info(f'Sampled images are saved to {args.save_dir}')
+    accelerator.wait_for_everyone()
+
+    # MAKE .NPZ FILE
+    if accelerator.is_main_process:
+        logger.info('Start making .npz file...')
+
+        # FIND IMAGES RECURSIVELY
+        image_paths = []
+        for root, _, files in os.walk(args.save_dir):
+            for file in files:
+                if file.endswith('.png'):
+                    image_paths.append(os.path.join(root, file))
+        image_paths = sorted(image_paths)
+        logger.info(f'Found {len(image_paths)} images in {args.save_dir}')
+
+        # SHUFFLE IMAGES
+        random.seed(args.seed)
+        random.shuffle(image_paths)
+
+        # READ IMAGES
+        images = []
+        for path in tqdm.tqdm(image_paths, desc='Reading images'):
+            images.append(np.asarray(Image.open(path)).astype(np.uint8))
+        images = np.stack(images)
+
+        # SAVE .NPZ FILE
+        np.savez(f'{args.save_dir}.npz', arr_0=images)
+        logger.info(f'Saved .npz file to {args.save_dir}.npz [shape={images.shape}].')
+
+    accelerator.wait_for_everyone()
     accelerator.end_training()
     logger.info('End of sampling')
 

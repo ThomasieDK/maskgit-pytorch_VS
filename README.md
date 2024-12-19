@@ -238,7 +238,8 @@ accelerate-launch sample_c2i.py -c CONFIG \
 We use [OpenAI's ADM Evaluations](https://github.com/openai/guided-diffusion/tree/main/evaluations) to evaluate the image quality.
 Please follow their instructions.
 
-You may need to make a `.npz` file from the samples for evaluation:
+The `.npz` file required for evaluation is automatically made in the sampling script.
+However, you can also make it manually by running:
 
 ```shell
 python make_npz.py --sample_dir SAMPLE_DIR
