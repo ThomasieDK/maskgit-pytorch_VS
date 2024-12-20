@@ -280,6 +280,8 @@ As a reference, the original MaskGIT paper reports FID=6.18 and IS=182.1 with 8 
 </tr>
 </table>
 
+<br/>
+
 We further improve the results by increasing the training batch size to 2048 and using the arccos mask schedule.
 See detailed differences by `diff configs/imagenet256.yaml configs/imagenet256-improved.yaml`.
 
@@ -307,6 +309,12 @@ See detailed differences by `diff configs/imagenet256.yaml configs/imagenet256-i
     <td width="30%"><img src="./assets/stage2/imagenet256-improved-maskgit-ema-8steps-topall-temp1-gumbel4_5-cfglinear3.png" alt="" /></td>
 </tr>
 </table>
+
+**Traverse Gumbel noise temperature**:
+During sampling, the annealed Gumbel noise is added to increase the diversity of the generated images, with a default temperature of 4.5.
+Below we show the FID-IS curve with different Gumbel noise temperatures, ranging from 0.0 to 7.0.
+
+<img src="./assets/stage2/imagenet256-improved-traverse-gumbel.png" alt="" width="350" />
 
 <br/>
 
@@ -382,5 +390,18 @@ TiTok:
   booktitle={The Thirty-eighth Annual Conference on Neural Information Processing Systems},
   year={2024},
   url={https://openreview.net/forum?id=tOXoQPRzPL}
+}
+```
+
+Token-Critic:
+
+```
+@inproceedings{lezama2022improved,
+  title={Improved masked image generation with token-critic},
+  author={Lezama, Jos{\'e} and Chang, Huiwen and Jiang, Lu and Essa, Irfan},
+  booktitle={European Conference on Computer Vision},
+  pages={70--86},
+  year={2022},
+  organization={Springer}
 }
 ```
