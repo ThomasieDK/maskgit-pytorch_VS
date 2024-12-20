@@ -141,18 +141,19 @@ It can be observed that better rFID doesn't necessarily mean better visual quali
 Caching the latents encoded by VQGAN can greatly accelerate the training and decrease the memory usage in the stage-2 training.
 However, make sure you have enough disk space to store the cached latents.
 
-|         Dataset         |   VQGAN type   | Disk space required |
-|:-----------------------:|:--------------:|:-------------------:|
-|          FFHQ           |  VQGAN-aMUSEd  |       \> 18G        |
-| ImageNet (training set) | VQGAN-MaskGIT  |       \> 1.3T       |
+|         Dataset         |   VQGAN type   | Disk space required | Disk space required<br/>`--only-idx` |
+|:-----------------------:|:--------------:|:-------------------:|:------------------------------------:|
+|          FFHQ           |  VQGAN-aMUSEd  |       \> 18G        |               \> 278M                |
+| ImageNet (training set) | VQGAN-MaskGIT  |       \> 1.3T       |               \> 5.6G                |
 
 ```shell
-accelerate-launch make_cache.py -c CONFIG --save_dir CACHEDIR [--bspp BATCH_SIZE_PER_PROCESS]
+accelerate-launch make_cache.py -c CONFIG --save_dir CACHEDIR [--bspp BATCH_SIZE_PER_PROCESS] [--only-idx]
 ```
 
 - `-c`: path to the config file, e.g., `./configs/imagenet256.yaml`.
 - `--save_dir`: the directory to save the cached latents.
 - `--bspp`: batch size per process.
+- `--only-idx`: only save the indices. This is enough for training the model.
 
 **Step 2: start training**.
 To train an **unconditional** model (e.g. FFHQ), run the following command:

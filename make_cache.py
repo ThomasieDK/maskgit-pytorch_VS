@@ -18,8 +18,9 @@ def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=0, help='Set random seed')
     parser.add_argument('-c', '--config', type=str, required=True, help='Path to configuration file')
-    parser.add_argument('--bspp', type=int, default=128, help='Batch size on each process')
     parser.add_argument('--save_dir', type=str, required=True, help='Path to directory caching latents')
+    parser.add_argument('--bspp', type=int, default=128, help='Batch size on each process')
+    parser.add_argument('--only-idx', action='store_true', default=False, help='Only save indices')
     return parser
 
 
@@ -105,15 +106,18 @@ def main():
                 for i in range(len(h)):
                     save_path = os.path.join(args.save_dir, f'{cnt}.npz')
                     data = dict(
-                        h=h[i].cpu().numpy(),
-                        quant=quant[i].cpu().numpy(),
                         idx=idx[i].cpu().numpy(),
-                        h_flip=h_flip[i].cpu().numpy(),
-                        quant_flip=quant_flip[i].cpu().numpy(),
                         idx_flip=idx_flip[i].cpu().numpy(),
                     )
+                    if not args.only_idx:
+                        data.update(
+                            h=h[i].cpu().numpy(),
+                            quant=quant[i].cpu().numpy(),
+                            h_flip=h_flip[i].cpu().numpy(),
+                            quant_flip=quant_flip[i].cpu().numpy(),
+                        )
                     if y is not None:
-                        data.update(y=y[i].cpu().numpy())  # type: ignore
+                        data.update(y=y[i].cpu().numpy())
                     np.savez(save_path, **data)
                     cnt += 1
     logger.info(f'Cached latents are saved to {args.save_dir}')
