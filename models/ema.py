@@ -109,3 +109,4 @@ class EMA:
 
     def to(self, device):
         self.shadow_params = [s_param.to(device) for s_param in self.shadow_params]
+        return self

@@ -76,10 +76,11 @@ wget 'https://huggingface.co/FoundationVision/LlamaGen/resolve/main/vq_ds16_c2i.
 ### Evaluation
 
 ```shell
-accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME \
-                                      --dataroot IMAGENET_DATAROOT \ 
-                                      [--save_dir SAVE_DIR] \
-                                      [--bspp BATCH_SIZE_PER_PROCESS]
+torchrun --nproc-per-node 4 evaluate_vqmodel.py \
+  --model_name MODEL_NAME \
+  --dataroot IMAGENET_DATAROOT \
+  [--save_dir SAVE_DIR] \
+  [--bspp BATCH_SIZE_PER_PROCESS]
 ```
 
 - `--model_name`: name of the pretrained VQGAN model. Options:
@@ -127,13 +128,14 @@ accelerate-launch evaluate_vqmodel.py --model_name MODEL_NAME \
 </table>
 
 The original images are taken from ImageNet and CelebA-HQ respectively.
-It can be observed that better rFID doesn't necessarily mean better visual quality.
+It's worth noting that models trained on ImageNet (VQGAN-MaskGIT, VQGAN-Taming, and VQGAN-LlamaGen) cannot generalize well to human faces.
+Therefore, in the stage-2 training, we use VQGAN-aMUSEd for the FFHQ dataset, and VQGAN-MaskGIT for the ImageNet dataset by default.
 
 <br/>
 
 
 
-## Stage-2 (Transformer)
+## Stage-2 (Bidirectional Transformer)
 
 ### Training
 
@@ -141,42 +143,42 @@ It can be observed that better rFID doesn't necessarily mean better visual quali
 Caching the latents encoded by VQGAN can greatly accelerate the training and decrease the memory usage in the stage-2 training.
 However, make sure you have enough disk space to store the cached latents.
 
-|         Dataset         |   VQGAN type   | Disk space required | Disk space required<br/>`--only-idx` |
-|:-----------------------:|:--------------:|:-------------------:|:------------------------------------:|
-|          FFHQ           |  VQGAN-aMUSEd  |       \> 18G        |               \> 278M                |
-| ImageNet (training set) | VQGAN-MaskGIT  |       \> 1.3T       |               \> 5.6G                |
+|         Dataset         |   VQGAN type   | Disk space required | Disk space required<br/>`--full` |
+|:-----------------------:|:--------------:|:-------------------:|:--------------------------------:|
+|          FFHQ           |  VQGAN-aMUSEd  |       \> 278M       |              \> 18G              |
+| ImageNet (training set) | VQGAN-MaskGIT  |       \> 5.6G       |             \> 1.3T              |
 
 ```shell
-accelerate-launch make_cache.py -c CONFIG --save_dir CACHEDIR [--bspp BATCH_SIZE_PER_PROCESS] [--only-idx]
+torchrun --nproc-per-node 4 make_cache.py -c CONFIG --save_dir CACHEDIR [--bspp BATCH_SIZE_PER_PROCESS] [--full]
 ```
 
 - `-c`: path to the config file, e.g., `./configs/imagenet256.yaml`.
 - `--save_dir`: the directory to save the cached latents.
 - `--bspp`: batch size per process.
-- `--only-idx`: only save the indices. This is enough for training the model.
+- `--full`: cache full latents, unnecessary for training MaskGIT.
 
 **Step 2: start training**.
 To train an **unconditional** model (e.g. FFHQ), run the following command:
 
 ```shell
 # if not using cached latents
-accelerate-launch train.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION]
+torchrun --nproc-per-node 4 train.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION]
 # if using cached latents
-accelerate-launch train.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION] --data.name cached --data.root CACHEDIR
+torchrun --nproc-per-node 4 train.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION] --data.name cached --data.root CACHEDIR
 ```
 
 To train a **class-conditional** model (e.g. ImageNet), run the following command:
 
 ```shell
 # if not using cached latents
-accelerate-launch train_c2i.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION]
+torchrun --nproc-per-node 4 train_c2i.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION]
 # if using cached latents
-accelerate-launch train_c2i.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION] --data.name cached --data.root CACHEDIR
+torchrun --nproc-per-node 4 train_c2i.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION] --data.name cached --data.root CACHEDIR
 ```
 
 - `-c`: path to the config file, e.g., `./configs/imagenet256.yaml`.
 - `-e`: the directory to save the experiment logs. Default: `./runs/<current time>`.
-- `-mp`: mixed precision training. Options: `no`, `fp16`, `bf16`.
+- `-mp`: mixed precision training. Options: `fp16`, `bf16`.
 
 <br/>
 
@@ -187,22 +189,25 @@ accelerate-launch train_c2i.py -c CONFIG [-e EXPDIR] [-mp MIXED_PRECISION] --dat
 To sample from the trained **unconditional** model (e.g., FFHQ), run the following command:
 
 ```shell
-accelerate-launch sample.py -c CONFIG \
-                            --weights WEIGHTS \
-                            --n_samples N_SAMPLES \
-                            --save_dir SAVEDIR \
-                            [--seed SEED] \
-                            [--bspp BATCH_SIZE_PER_PROCESS] \
-                            [--sampling_steps SAMPLING_STEPS] \
-                            [--topk TOPK] \
-                            [--softmax_temp SOFTMAX_TEMP] \
-                            [--base_gumbel_temp BASE_GUMBEL_TEMP]
+torchrun --nproc-per-node 4 sample.py \
+  -c CONFIG \
+  --weights WEIGHTS \
+  --n_samples N_SAMPLES \
+  --save_dir SAVEDIR \
+  [--make_npz] \
+  [--seed SEED] \
+  [--bspp BATCH_SIZE_PER_PROCESS] \
+  [--sampling_steps SAMPLING_STEPS] \
+  [--topk TOPK] \
+  [--softmax_temp SOFTMAX_TEMP] \
+  [--base_gumbel_temp BASE_GUMBEL_TEMP]
 ```
 
 - `-c`: path to the config file, e.g., `./configs/ffhq256.yaml`.
 - `--weights`: path to the trained model weights.
 - `--n_samples`: number of samples to generate.
 - `--save_dir`: the directory to save the generated samples.
+- `--make_npz`: make `.npz` file for evaluation. Default: False.
 - `--seed`: random seed. Default: 8888.
 - `--bspp`: batch size per process. Default: 100.
 - `--sampling_steps`: number of sampling steps. Default: 8.
@@ -213,22 +218,24 @@ accelerate-launch sample.py -c CONFIG \
 To sample from the trained **class-conditional** model (e.g., ImageNet), run the following command:
 
 ```shell
-accelerate-launch sample_c2i.py -c CONFIG \
-                                --weights WEIGHTS \
-                                --n_samples N_SAMPLES \
-                                --save_dir SAVEDIR \
-                                [--cfg CFG] \
-                                [--cfg_schedule CFG_SCHEDULE] \
-                                [--seed SEED] \
-                                [--bspp BATCH_SIZE_PER_PROCESS] \
-                                [--sampling_steps SAMPLING_STEPS] \
-                                [--topk TOPK] \
-                                [--softmax_temp SOFTMAX_TEMP] \
-                                [--base_gumbel_temp BASE_GUMBEL_TEMP]
+torchrun --nproc-per-node 4 sample_c2i.py \
+  -c CONFIG \
+  --weights WEIGHTS \
+  --n_samples N_SAMPLES \
+  --save_dir SAVEDIR \
+  [--make_npz] \
+  [--cfg CFG] \
+  [--cfg_schedule CFG_SCHEDULE] \
+  [--seed SEED] \
+  [--bspp BATCH_SIZE_PER_PROCESS] \
+  [--sampling_steps SAMPLING_STEPS] \
+  [--topk TOPK] \
+  [--softmax_temp SOFTMAX_TEMP] \
+  [--base_gumbel_temp BASE_GUMBEL_TEMP]
 ```
 
 - `--cfg`: classifier free guidance. Default: 1.0.
-- `--cfg_schedule`: schedule for classifier free guidance. Options: "constant", "linear", "power-cosine-[num]". Default: "linear".
+- `--cfg_schedule`: schedule for classifier free guidance. Options: "constant", "linear", "linear-r", "power-cosine-[num]". Default: "linear-r".
 
 <br/>
 
@@ -239,7 +246,7 @@ accelerate-launch sample_c2i.py -c CONFIG \
 We use [OpenAI's ADM Evaluations](https://github.com/openai/guided-diffusion/tree/main/evaluations) to evaluate the image quality.
 Please follow their instructions.
 
-The `.npz` file required for evaluation is automatically made in the sampling script.
+The `.npz` file required for evaluation will be automatically made in the sampling script if `--make_npz` is set.
 However, you can also make it manually by running:
 
 ```shell
@@ -259,62 +266,26 @@ As a reference, the original MaskGIT paper reports FID=6.18 and IS=182.1 with 8 
 
 **Quantitative results**:
 
-| EMA Model | Sampling Steps |     CFG     | FID ↓ |  IS ↑  | Precision ↑ | Recall ↑ |
-|:---------:|:--------------:|:-----------:|:-----:|:------:|:-----------:|:--------:|
-|    Yes    |       8        |     1.0     | 8.92  | 124.76 |    0.86     |   0.42   |
-|    Yes    |       8        | linear(2.0) | 7.15  | 186.18 |    0.91     |   0.36   |
-|    Yes    |       8        | linear(3.0) | 8.18  | 233.28 |    0.94     |   0.31   |
+| EMA Model | Sampling Steps |      CFG      | FID ↓ |  IS ↑  | Precision ↑ | Recall ↑ |
+|:---------:|:--------------:|:-------------:|:-----:|:------:|:-----------:|:--------:|
+|    Yes    |       8        |      1.0      | 7.38  | 134.53 |    0.84     |   0.46   |
+|    Yes    |       8        | linear-r(2.0) | 5.54  | 203.69 |    0.89     |   0.41   |
+|    Yes    |       8        | linear-r(3.0) | 6.52  | 253.59 |    0.92     |   0.37   |
 
 **Uncurated samples**:
 
 <table>
 <tr>
     <td align="center">8 steps, cfg=1.0</td>
-    <td align="center">8 steps, cfg=linear(2.0)</td>
-    <td align="center">8 steps, cfg=linear(3.0)</td>
+    <td align="center">8 steps, cfg=linear-r(2.0)</td>
+    <td align="center">8 steps, cfg=linear-r(3.0)</td>
 </tr>
 <tr>
-    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-gumbel4_5-cfg1.png" alt="" /></td>
-    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-gumbel4_5-cfglinear2.png" alt="" /></td>
-    <td width="30%"><img src="./assets/stage2/imagenet256-maskgit-ema-8steps-topall-temp1-gumbel4_5-cfglinear3.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-cfg1.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-cfglinearr2.png" alt="" /></td>
+    <td width="30%"><img src="./assets/stage2/imagenet256-cfglinearr3.png" alt="" /></td>
 </tr>
 </table>
-
-<br/>
-
-We further improve the results by increasing the training batch size to 2048 and using the arccos mask schedule.
-See detailed differences by `diff configs/imagenet256.yaml configs/imagenet256-improved.yaml`.
-
-**Quantitative results**:
-
-| EMA Model | Sampling Steps |     CFG     | FID ↓ |  IS ↑  | Precision ↑ | Recall ↑ |
-|:---------:|:--------------:|:-----------:|:-----:|:------:|:-----------:|:--------:|
-|    Yes    |       8        |     1.0     | 7.21  | 152.98 |    0.89     |   0.42   |
-|    Yes    |       8        | linear(1.5) | 6.21  | 192.62 |    0.91     |   0.39   |
-|    Yes    |       8        | linear(2.0) | 6.09  | 226.52 |    0.92     |   0.37   |
-|    Yes    |       8        | linear(2.5) | 6.54  | 257.97 |    0.93     |   0.35   |
-|    Yes    |       8        | linear(3.0) | 7.19  | 282.99 |    0.94     |   0.32   |
-
-**Uncurated samples**:
-
-<table>
-<tr>
-    <td align="center">8 steps, cfg=1.0</td>
-    <td align="center">8 steps, cfg=linear(2.0)</td>
-    <td align="center">8 steps, cfg=linear(3.0)</td>
-</tr>
-<tr>
-    <td width="30%"><img src="./assets/stage2/imagenet256-improved-maskgit-ema-8steps-topall-temp1-gumbel4_5-cfg1.png" alt="" /></td>
-    <td width="30%"><img src="./assets/stage2/imagenet256-improved-maskgit-ema-8steps-topall-temp1-gumbel4_5-cfglinear2.png" alt="" /></td>
-    <td width="30%"><img src="./assets/stage2/imagenet256-improved-maskgit-ema-8steps-topall-temp1-gumbel4_5-cfglinear3.png" alt="" /></td>
-</tr>
-</table>
-
-**Traverse Gumbel noise temperature**:
-During sampling, the annealed Gumbel noise is added to increase the diversity of the generated images, with a default temperature of 4.5.
-Below we show the FID-IS curve with different Gumbel noise temperatures, ranging from 0.0 to 7.0.
-
-<img src="./assets/stage2/imagenet256-improved-traverse-gumbel.png" alt="" width="350" />
 
 <br/>
 

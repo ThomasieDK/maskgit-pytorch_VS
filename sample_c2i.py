@@ -7,15 +7,18 @@ from PIL import Image
 from itertools import chain
 from omegaconf import OmegaConf
 
-import accelerate
 import torch
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.distributed import DistributedSampler
 from torchvision.utils import save_image
 
 from models import make_vqmodel, MaskGITSampler, RandomSampler
 from utils.logger import get_logger
 from utils.image import image_norm_to_float
-from utils.misc import instantiate_from_config
+from utils.misc import set_seed
+from utils.experiment import instantiate_from_config
+from utils.distributed import init_distributed_mode, is_main_process, is_dist_avail_and_initialized
+from utils.distributed import get_rank, get_world_size, wait_for_everyone, main_process_first, cleanup
 
 
 def get_parser():
@@ -25,8 +28,9 @@ def get_parser():
     parser.add_argument('--n_samples', type=int, required=True, help='Number of samples')
     parser.add_argument('--save_dir', type=str, required=True, help='Path to directory saving samples')
     parser.add_argument('--n_classes', type=int, help='Number of classes. Use config value if not provided')
+    parser.add_argument('--make_npz', action='store_true', default=False, help='Make .npz file after sampling')
     parser.add_argument('--cfg', type=float, default=1.0, help='Scale of classifier-free guidance')
-    parser.add_argument('--cfg_schedule', type=str, default='linear', help='Schedule of classifier-free guidance')
+    parser.add_argument('--cfg_schedule', type=str, default='linear-r', help='Schedule of classifier-free guidance')
     parser.add_argument('--seed', type=int, default=8888, help='Set random seed')
     parser.add_argument('--bspp', type=int, default=100, help='Batch size on each process')
     parser.add_argument('--sampling_steps', type=int, default=8, help='Number of sampling steps')
@@ -59,32 +63,31 @@ def main():
     conf = OmegaConf.load(args.config)
     conf = OmegaConf.merge(conf, OmegaConf.from_dotlist(unknown_args))
 
-    # INITIALIZE ACCELERATOR
-    accelerator = accelerate.Accelerator()
-    device = accelerator.device
-    print(f'Process {accelerator.process_index} using device: {device}', flush=True)
-    accelerator.wait_for_everyone()
+    # INITIALIZE DISTRIBUTED MODE
+    device = init_distributed_mode()
+    print(f'Process {get_rank()} using device: {device}', flush=True)
+    wait_for_everyone()
 
     # INITIALIZE LOGGER
-    logger = get_logger(use_tqdm_handler=True, is_main_process=accelerator.is_main_process)
+    logger = get_logger(use_tqdm_handler=True, is_main_process=is_main_process())
 
     # SET SEED
-    accelerate.utils.set_seed(args.seed, device_specific=True)
+    set_seed(args.seed + get_rank())
     logger.info('=' * 19 + ' System Info ' + '=' * 18)
-    logger.info(f'Number of processes: {accelerator.num_processes}')
-    logger.info(f'Distributed type: {accelerator.distributed_type}')
-    logger.info(f'Mixed precision: {accelerator.mixed_precision}')
-    accelerator.wait_for_everyone()
+    logger.info(f'Number of processes: {get_world_size()}')
+    logger.info(f'Distributed mode: {is_dist_avail_and_initialized()}')
+    wait_for_everyone()
 
     # BUILD DATASET AND DATALOADER
     dataset = DummyDataset(n_samples=args.n_samples, n_classes=args.n_classes or conf.data.n_classes)
+    datasampler = DistributedSampler(dataset, num_replicas=get_world_size(), rank=get_rank(), shuffle=False)
     dataloader = DataLoader(
-        dataset=dataset, batch_size=args.bspp, shuffle=False, drop_last=False,
+        dataset=dataset, batch_size=args.bspp, sampler=datasampler, drop_last=False,
         num_workers=4, pin_memory=True, prefetch_factor=2,
     )
 
     # LOAD PRETRAINED VQMODEL
-    with accelerator.main_process_first():
+    with main_process_first():
         vqmodel = make_vqmodel(conf.vqmodel.model_name)
     vqmodel = vqmodel.eval().to(device)
     logger.info('=' * 19 + ' Model Info ' + '=' * 19)
@@ -111,16 +114,14 @@ def main():
         sampler = RandomSampler(**common_kwargs)
     else:
         raise ValueError(f'Unknown sampling strategy: {args.sampling_strategy}')
-
-    # PREPARE FOR DISTRIBUTED MODE
-    dataloader = accelerator.prepare(dataloader)  # type: ignore
-    accelerator.wait_for_everyone()
+    wait_for_everyone()
 
     # START SAMPLING
     logger.info('Start sampling...')
     logger.info(f'Samples will be saved to {args.save_dir}')
-    for name, y in tqdm.tqdm(dataloader, desc='Sampling', disable=not accelerator.is_main_process):
+    for name, y in tqdm.tqdm(dataloader, desc='Sampling', disable=not is_main_process()):
         B = name.shape[0]
+        y = y.long().to(device)
         idx = sampler.sample(n_samples=B, y=y)
         samples = vqmodel.decode_indices(idx, shape=(B, fm_size, fm_size, -1)).clamp(-1, 1)
         samples = image_norm_to_float(samples).cpu()
@@ -128,10 +129,10 @@ def main():
             os.makedirs(os.path.join(args.save_dir, f'class_{c.item()}'), exist_ok=True)
             save_image(sample, os.path.join(args.save_dir, f'class_{c.item()}', f'{i}.png'))
     logger.info(f'Sampled images are saved to {args.save_dir}')
-    accelerator.wait_for_everyone()
+    wait_for_everyone()
 
     # MAKE .NPZ FILE
-    if accelerator.is_main_process:
+    if is_main_process() and args.make_npz:
         logger.info('Start making .npz file...')
 
         # FIND IMAGES RECURSIVELY
@@ -157,8 +158,8 @@ def main():
         np.savez(f'{args.save_dir}.npz', arr_0=images)
         logger.info(f'Saved .npz file to {args.save_dir}.npz [shape={images.shape}].')
 
-    accelerator.wait_for_everyone()
-    accelerator.end_training()
+    wait_for_everyone()
+    cleanup()
     logger.info('End of sampling')
 
 

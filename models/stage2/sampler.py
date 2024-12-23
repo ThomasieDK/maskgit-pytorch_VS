@@ -19,7 +19,7 @@ class BaseSampler:
             device: torch.device = None,
     ):
         assert sampling_steps <= sequence_length
-        assert cfg_schedule in ['constant', 'linear'] or cfg_schedule.startswith('power-cosine-')
+        assert cfg_schedule in ['constant', 'linear', 'linear-r'] or cfg_schedule.startswith('power-cosine-')
         self.model = model
         self.mask_token_id = self.model.mask_token_id
         self.sequence_length = sequence_length
@@ -34,6 +34,8 @@ class BaseSampler:
         if self.cfg_schedule == 'constant':
             cfg_current = self.cfg
         elif self.cfg_schedule == 'linear':
+            cfg_current = 1 + (self.cfg - 1) * (t / T)
+        elif self.cfg_schedule == 'linear-r':
             cfg_current = 1 + (self.cfg - 1) * (L - n) / L
         elif self.cfg_schedule.startswith('power-cosine-'):
             power = float(self.cfg_schedule[13:])
