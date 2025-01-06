@@ -262,15 +262,15 @@ The script will recursively search for all the images in `SAMPLE_DIR` and save t
 ### Results (class-conditional ImageNet 256x256)
 
 Below we show the quantitative and qualitative results of class-conditional ImageNet (256x256).
-As a reference, the original MaskGIT paper reports FID=6.18 and IS=182.1 with 8 sampling steps without classifier-free guidance (CFG=1).
+As a reference, the original MaskGIT paper reports FID=6.18 and IS=182.1 with 8 sampling steps without classifier-free guidance (CFG=1) and Gumbel temperature 4.5.
 
 **Quantitative results**:
 
-| EMA Model | Sampling Steps |      CFG      | FID ↓ |  IS ↑  | Precision ↑ | Recall ↑ |
-|:---------:|:--------------:|:-------------:|:-----:|:------:|:-----------:|:--------:|
-|    Yes    |       8        |      1.0      | 7.38  | 134.53 |    0.84     |   0.46   |
-|    Yes    |       8        | linear-r(2.0) | 5.54  | 203.69 |    0.89     |   0.41   |
-|    Yes    |       8        | linear-r(3.0) | 6.52  | 253.59 |    0.92     |   0.37   |
+| EMA Model | Sampling Steps |      CFG      | Gumbel Temp | FID ↓ |  IS ↑  |
+|:---------:|:--------------:|:-------------:|:-----------:|:-----:|:------:|
+|    Yes    |       8        |      1.0      |     4.0     | 7.25  | 139.83 |
+|    Yes    |       8        | linear-r(2.0) |     5.0     | 5.22  | 188.41 |
+|    Yes    |       8        | linear-r(3.0) |    10.0     | 4.86  | 222.72 |
 
 **Uncurated samples**:
 
@@ -286,6 +286,12 @@ As a reference, the original MaskGIT paper reports FID=6.18 and IS=182.1 with 8 
     <td width="30%"><img src="./assets/stage2/imagenet256-cfglinearr3.png" alt="" /></td>
 </tr>
 </table>
+
+**Traverse Gumbel noise temperature**:
+During sampling, the annealed Gumbel noise is added to increase the diversity of the generated images.
+Below we show the FID-IS curves by traversing the Gumbel noise temperature under different CFG scales.
+
+<img src="./assets/stage2/imagenet256-traverse-gumbel.png" alt="" width="350" />
 
 <br/>
 
