@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch import Tensor
+from tamg.scheduler import compute_topo_uncertainty, select_high_uncertainty
 
 
 class BaseSampler:
@@ -46,7 +47,7 @@ class BaseSampler:
         return cfg_current
 
     @torch.no_grad()
-    def get_model_prediction(self, idx: Tensor, y: Tensor = None, cfg: float = 1.0):
+    def get_model_prediction(self, idx: Tensor, y: Tensor = None, cfg: float = 1.0, return_logits: bool = False):
         L = idx.shape[1]
         logits = self.model(idx, y)
         if y is not None and cfg != 1.0:
@@ -56,6 +57,8 @@ class BaseSampler:
             v, _ = torch.topk(logits, min(self.topk, L), largest=True, sorted=True)
             logits[logits < v[..., [-1]]] = float('-inf')
         probs = torch.softmax(logits / self.softmax_temp, dim=-1)
+        if return_logits:
+            return probs, logits
         return probs
 
 
@@ -68,18 +71,17 @@ class MaskGITSampler(BaseSampler):
     def sample_one_step(self, idx: Tensor, n: int, y: Tensor = None, cfg: float = 1.0, gumbel_temp: float = 0.0):
         B, L = idx.shape
         mask = torch.eq(idx, self.mask_token_id)
-        # get probabilities
-        probs = self.get_model_prediction(idx, y, cfg)
+        # get probabilities and logits
+        probs, logits = self.get_model_prediction(idx, y, cfg, return_logits=True)
         # sample all positions
         sampled_idx = torch.multinomial(probs.reshape(B * L, -1), num_samples=1).reshape(B, L)
         sampled_probs = torch.gather(probs, dim=-1, index=sampled_idx[:, :, None]).reshape(B, L)
         # restore unmasked positions
         sampled_idx = torch.where(mask, sampled_idx, idx)
         sampled_probs = torch.where(mask, sampled_probs, torch.full_like(sampled_probs, torch.inf))
-        # unmask top L-n positions (with gumbel noise added for randomness)
-        randomness = self.gumbel.sample(sampled_probs.shape).to(sampled_probs.device)
-        confidence = torch.log(sampled_probs) + gumbel_temp * randomness
-        index = confidence.topk(L - n, dim=1).indices
+        # topology-guided mask scheduling
+        uncertainties = compute_topo_uncertainty(logits, mask)
+        index = select_high_uncertainty(uncertainties, L - n)
         mask = mask.scatter(dim=1, index=index, src=torch.zeros_like(mask, dtype=torch.bool))
         sampled_idx = torch.where(mask, self.mask_token_id, sampled_idx)
         return sampled_idx, mask

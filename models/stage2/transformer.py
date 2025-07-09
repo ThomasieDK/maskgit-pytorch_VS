@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from .mask_schedule import get_mask_scheduling_fn
+from tamg.topology import TopologicalLoss
 
 
 class SelfAttention(nn.Module):
@@ -70,6 +71,7 @@ class MaskTransformer(nn.Module):
             n_classes: int = 0,
             dropout: float = 0.0,
             mask_schedule_type: str = 'cosine',
+            lambda_topo: float = 0.0,
     ):
         super().__init__()
 
@@ -103,6 +105,9 @@ class MaskTransformer(nn.Module):
         # weights initialization
         self.apply(self._init_weights)
         nn.init.trunc_normal_(self.pos_emb, std=0.02)
+
+        # topology loss function
+        self.topo_loss_fn = TopologicalLoss(lambda_topo=lambda_topo)
 
     @staticmethod
     def _init_weights(module):
@@ -147,3 +152,9 @@ class MaskTransformer(nn.Module):
         mask = torch.zeros((B, L), dtype=torch.bool, device=device)
         mask.scatter_(dim=1, index=index, src=torch.ones_like(mask, dtype=torch.bool))
         return mask
+
+    def forward_with_topology(self, idx: Tensor, mask: Tensor, y: Tensor | None = None):
+        logits = self.forward(idx, y)
+        topo_loss, topo_grad = self.topo_loss_fn(logits.detach(), mask)
+        logits = logits - self.topo_loss_fn.lambda_topo * topo_grad
+        return logits, topo_loss

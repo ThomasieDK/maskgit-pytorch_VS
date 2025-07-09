@@ -174,20 +174,18 @@ def main():
         B, L = idx.shape
         with model.no_sync() if no_sync else nullcontext():
             with torch.autocast(device_type='cuda', dtype=mp_dtype):
-                # transformer forward
-                mask = model_wo_ddp.get_random_mask(B, L)                           # (B, L)
-                masked_idx = torch.where(mask, model_wo_ddp.mask_token_id, idx)     # (B, L)
-                preds = model(masked_idx).reshape(B * L, -1)                        # (B * L, C)
-                mask = mask.reshape(B * L)                                          # (B * L)
-                # cross-entropy loss
-                target = idx.reshape(-1)                                            # (B * L)
-                target = torch.where(mask, target, -100)
-                loss = F.cross_entropy(
+                mask = model_wo_ddp.get_random_mask(B, L)
+                masked_idx = torch.where(mask, model_wo_ddp.mask_token_id, idx)
+                logits, topo_loss = model_wo_ddp.forward_with_topology(masked_idx, mask)
+                preds = logits.reshape(B * L, -1)
+                mask_flat = mask.reshape(B * L)
+                target = idx.reshape(-1)
+                target = torch.where(mask_flat, target, -100)
+                ce_loss = F.cross_entropy(
                     input=preds, target=target, ignore_index=-100,
                     label_smoothing=conf.train.label_smoothing,
                 )
-                loss = loss * loss_scale
-            # backward
+                loss = (ce_loss + topo_loss) * loss_scale
             scaler.scale(loss).backward()
         return loss
 
@@ -198,23 +196,29 @@ def main():
             B, L = idx.shape
         else:
             x = discard_label(batch).float().to(device)
-            B, N = x.shape[0], conf.data.img_size // vqmodel.downsample_factor
-            L = N * N
-            # vqmodel encode
-            with torch.no_grad():
-                idx = vqmodel.encode(x)['indices'].reshape(B, L)
+            scales = [0.5, 1.0]
+            scale_weights = {0.5: 0.5, 1.0: 1.0}
+            idx_list = []
+            for s in scales:
+                x_s = F.interpolate(x, scale_factor=s)
+                N = int(conf.data.img_size * s) // vqmodel.downsample_factor
+                L_s = N * N
+                with torch.no_grad():
+                    idx_scaled = vqmodel.encode(x_s)['indices'].reshape(x.shape[0], L_s)
+                idx_list.append(idx_scaled)
 
         # zero the gradients
         optimizer.zero_grad()
 
         # forward and backward with gradient accumulation
         loss = torch.tensor(0., device=device)
-        for i in range(0, B, micro_batch_size):
-            idx_micro_batch = idx[i:i+micro_batch_size]
-            loss_scale = idx_micro_batch.shape[0] / B
-            no_sync = i + micro_batch_size < B and is_dist_avail_and_initialized()
-            loss_micro_batch = train_micro_batch(idx_micro_batch, loss_scale, no_sync)
-            loss = loss + loss_micro_batch
+        for s, idx in zip(scales, idx_list):
+            for i in range(0, B, micro_batch_size):
+                idx_micro_batch = idx[i:i+micro_batch_size]
+                loss_scale = idx_micro_batch.shape[0] / B
+                no_sync = i + micro_batch_size < B and is_dist_avail_and_initialized()
+                loss_micro_batch = train_micro_batch(idx_micro_batch, loss_scale, no_sync)
+                loss = loss + loss_micro_batch * scale_weights[s]
 
         # optimize
         if conf.train.get('clip_grad_norm', None):
